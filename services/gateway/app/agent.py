@@ -51,6 +51,17 @@ class LLMError(Exception):
     pass
 
 
+class UnloadedToolCall(LLMError):
+    """The model called a real tool before searching for it (Groq rejects these server-side)."""
+
+    def __init__(self, tool: str):
+        super().__init__(f"model called unloaded tool {tool}")
+        self.tool = tool
+
+
+_UNLOADED = re.compile(r"attempted to call tool '([^']+)' which was not in request\.tools")
+
+
 def _system_prompt(catalog: str) -> str:
     now = datetime.now(TZ)
     return (
@@ -111,6 +122,8 @@ async def _complete(http: httpx2.AsyncClient, messages: list[dict], tools: list[
             wait = float(resp.headers.get("retry-after") or 10)
             await asyncio.sleep(min(wait, 25))
             continue
+        if resp.status_code == 400 and (m := _UNLOADED.search(resp.text)):
+            raise UnloadedToolCall(m.group(1))
         if resp.status_code >= 400:
             raise LLMError(f"LLM provider returned {resp.status_code}: {resp.text[:300]}")
         return resp.json()["choices"][0]["message"]
@@ -143,11 +156,20 @@ async def _run(user: dict, history: list[dict]) -> dict:
             by_safe = {_safe_name(t.name): t for t in listed}
             index = [{"name": t.name, "description": t.description or ""} for t in listed]
             loaded: set[str] = {n for n in _used_tools(history) if n in by_safe}
+            # Pre-load the tools the user's own words point at, so simple requests need no search step.
+            last_user = next((m["content"] for m in reversed(history) if m.get("role") == "user"), "")
+            loaded |= {_safe_name(t["name"]) for t in toolsearch.search(index, str(last_user), limit=5)}
             messages = [{"role": "system", "content": _system_prompt(toolsearch.catalog(index))}, *_compact(history)]
 
             for _ in range(MAX_STEPS):
                 tools = [SEARCH_TOOL, *(_schema(by_safe[n]) for n in sorted(loaded))]
-                reply = await _complete(llm_http, messages + new_messages, tools)
+                try:
+                    reply = await _complete(llm_http, messages + new_messages, tools)
+                except UnloadedToolCall as exc:
+                    if exc.tool not in by_safe or exc.tool in loaded:
+                        raise LLMError(f"model called unknown tool {exc.tool}") from None
+                    loaded.add(exc.tool)  # it guessed a real tool's name: load it and ask again
+                    reply = await _complete(llm_http, messages + new_messages, [SEARCH_TOOL, *(_schema(by_safe[n]) for n in sorted(loaded))])
                 calls = reply.get("tool_calls") or []
                 assistant = {"role": "assistant", "content": reply.get("content") or ""}
                 if calls:
