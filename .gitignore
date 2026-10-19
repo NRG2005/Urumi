@@ -1,6 +1,5 @@
 .env
 *.local.yaml
-secrets*.yaml
 __pycache__/
 *.pyc
 .venv/

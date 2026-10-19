@@ -1,0 +1,7 @@
+domain: dash.localtest.me
+scheme: http
+ingress:
+  tls:
+    enabled: false
+postgres:
+  storageClass: local-path

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  labels: {{- include "gw.labels" . | nindent 4 }}
+data:
+  GATEWAY_PUBLIC_URL: {{ include "gw.url" . | quote }}
+  GATEWAY_INTERNAL_MCP_URL: http://127.0.0.1:8000/mcp
+  ADMIN_EMAIL: {{ .Values.admin.email | quote }}
+  SEED_SERVERS: {{ .Values.upstreams.seed | toJson | quote }}
+  INTERNAL_HOST_ALLOWLIST: {{ join "," .Values.upstreams.internalHostAllowlist | quote }}
+  HEALTH_INTERVAL_SECONDS: {{ .Values.gateway.healthIntervalSeconds | quote }}
+  HEALTH_TIMEOUT_SECONDS: {{ .Values.gateway.healthTimeoutSeconds | quote }}
+  CALL_TIMEOUT_SECONDS: {{ .Values.gateway.callTimeoutSeconds | quote }}
+  AGENT_TIMEZONE: {{ .Values.gateway.agentTimezone | quote }}
+  LLM_BASE_URL: {{ .Values.llm.baseUrl | quote }}
+  LLM_MODEL: {{ .Values.llm.model | quote }}

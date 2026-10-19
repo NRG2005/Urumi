@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  labels: {{- include "gw.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gateway
+  ports:
+    - name: http
+      port: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels: {{- include "gw.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "gw.labels" . | nindent 8 }}
+        app.kubernetes.io/name: gateway
+      annotations:
+        # Roll the pods when config or secrets change.
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum | trunc 16 }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum | trunc 16 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gateway
+          image: {{ .Values.gateway.image }}
+          imagePullPolicy: {{ .Values.gateway.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          envFrom:
+            - configMapRef: { name: gateway-config }
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: gateway-secrets, key: postgres-password } }
+            - name: DATABASE_URL
+              value: postgresql://gateway:$(POSTGRES_PASSWORD)@gateway-postgres:5432/gateway
+            - name: GATEWAY_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: gateway-secrets, key: secret-key } }
+            - name: ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: gateway-secrets, key: admin-password } }
+            - name: LLM_API_KEY
+              valueFrom: { secretKeyRef: { name: gateway-secrets, key: llm-api-key } }
+            {{- range $env, $_ := .Values.upstreams.credentials }}
+            - name: {{ $env }}
+              valueFrom: { secretKeyRef: { name: gateway-secrets, key: {{ $env | lower | replace "_" "-" }} } }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.gateway.resources | nindent 12 }}

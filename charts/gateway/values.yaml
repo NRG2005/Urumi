@@ -1,0 +1,73 @@
+domain: dash.localtest.me
+scheme: http
+
+ingress:
+  className: traefik
+  tls:
+    enabled: false
+    secretName: dash-tls
+  annotations: {}
+
+admin:
+  email: admin@urumi.local   # password is generated into the gateway-secrets Secret
+
+gateway:
+  image: gateway:dev
+  pullPolicy: IfNotPresent
+  # Stateless MCP + Postgres-backed state: any replica can serve any request.
+  replicas: 2
+  healthIntervalSeconds: 5
+  healthTimeoutSeconds: 4
+  callTimeoutSeconds: 20
+  agentTimezone: Asia/Kolkata
+  resources:
+    requests: { cpu: 50m,  memory: 128Mi }
+    limits:   { cpu: "1",  memory: 384Mi }
+
+dashboard:
+  image: dashboard:dev
+  pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 10m,  memory: 16Mi }
+    limits:   { cpu: 200m, memory: 64Mi }
+
+postgres:
+  image: postgres:17-alpine
+  storageClass: ""
+  size: 1Gi
+  resources:
+    requests: { cpu: 50m,  memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+# Chat agent LLM: any OpenAI-compatible endpoint. The key goes in secrets.local.yaml (gitignored).
+llm:
+  baseUrl: https://api.groq.com/openai/v1
+  model: openai/gpt-oss-120b
+  apiKey: ""
+
+upstreams:
+  # SSRF guard exception: admin-added URLs may resolve to private IPs only under these suffixes.
+  # Deliberately NOT the gateway's own namespace (its Postgres lives there).
+  internalHostAllowlist:
+    - store.svc.cluster.local
+    - mcp.svc.cluster.local
+  # Registered on first boot. credential_env names a key in `credentials` below.
+  seed:
+    - slug: woo
+      name: WooCommerce
+      url: http://store-woo-mcp.store.svc.cluster.local:8000/mcp
+      admin_only_tools: [create_product, update_order_status]
+    - slug: everything
+      name: Everything (MCP reference server)
+      url: http://everything.mcp.svc.cluster.local:3001/mcp
+    - slug: github
+      name: GitHub
+      url: https://api.githubcopilot.com/mcp/x/issues
+      auth_type: bearer
+      credential_env: GITHUB_TOKEN
+  # Static upstream credentials, injected server-side. Set in secrets.local.yaml.
+  credentials:
+    GITHUB_TOKEN: ""
+
+networkPolicy:
+  enabled: true

@@ -1,0 +1,77 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $rel := .Release.Name }}
+# Default deny: nothing may connect to any pod in the store namespace unless allowed below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels: {{- include "store.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# WordPress: shoppers via the ingress controller; woo-mcp and the bootstrap Job inside the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wordpress-ingress
+  labels: {{- include "store.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: wordpress } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [woo-mcp, store-bootstrap] }
+      ports:
+        - { port: 80 }
+---
+# MariaDB: only WordPress and the bootstrap Job.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mariadb-ingress
+  labels: {{- include "store.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: mariadb } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [wordpress, store-bootstrap] }
+      ports:
+        - { port: 3306 }
+---
+# woo-mcp: only gateway pods, from the gateway namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: woo-mcp-from-gateway-only
+  labels: {{- include "store.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: woo-mcp } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.gatewayNamespace }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+      ports:
+        - { port: 8000 }
+  # And it may only talk to its own WordPress (plus DNS): a compromised woo-mcp cannot
+  # reach MariaDB directly, other namespaces, or the internet.
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: wordpress } }
+      ports:
+        - { port: 80 }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+{{- end }}

@@ -1,0 +1,6 @@
+image: everything:dev
+pullPolicy: IfNotPresent
+gatewayNamespace: gateway
+resources:
+  requests: { cpu: 20m,  memory: 64Mi }
+  limits:   { cpu: 300m, memory: 192Mi }

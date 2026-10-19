@@ -1,0 +1,15 @@
+domain: dash.example.com
+scheme: https
+ingress:
+  tls:
+    enabled: true
+    secretName: dash-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+gateway:
+  image: ghcr.io/OWNER/urumi-gateway:0.1.0
+dashboard:
+  image: ghcr.io/OWNER/urumi-dashboard:0.1.0
+postgres:
+  storageClass: local-path
+  size: 5Gi

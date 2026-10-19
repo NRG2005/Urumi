@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-postgres
+  labels: {{- include "gw.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gateway-postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: gateway-postgres
+  labels: {{- include "gw.labels" . | nindent 4 }}
+spec:
+  serviceName: gateway-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway-postgres
+  template:
+    metadata:
+      labels:
+        {{- include "gw.labels" . | nindent 8 }}
+        app.kubernetes.io/name: gateway-postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70      # "postgres" in the alpine image
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          env:
+            - { name: POSTGRES_DB, value: gateway }
+            - { name: POSTGRES_USER, value: gateway }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: gateway-secrets, key: postgres-password } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "gateway", "-d", "gateway"] }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: postgres }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources: {{- toYaml .Values.postgres.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.postgres.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.size }}
