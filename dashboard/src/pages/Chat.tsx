@@ -69,9 +69,11 @@ export default function Chat({ user }: { user: User }) {
                   {t.trace.map((c, j) => (
                     <details key={j} className="tool-call">
                       <summary>
-                        <span className={`badge ${c.is_error ? 'bad' : 'ok'}`}>{c.is_error ? 'error' : 'tool call'}</span>
+                        {c.server === 'gateway'
+                          ? <span className="badge">🔎 tool search</span>
+                          : <span className={`badge ${c.is_error ? 'bad' : 'ok'}`}>{c.is_error ? 'error' : 'tool call'}</span>}
                         <span className="badge accent">{c.server}</span>
-                        <code>{c.tool.split('__').slice(1).join('__')}</code>
+                        <code>{c.tool.includes('__') ? c.tool.split('__').slice(1).join('__') : c.tool}</code>
                         <span className="sub mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
                           {JSON.stringify(c.arguments)}
                         </span>

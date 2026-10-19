@@ -18,7 +18,7 @@ import os
 import re
 
 from . import config, db, upstream
-from .security import encrypt
+from .security import decrypt, encrypt
 
 log = logging.getLogger("gateway.registry")
 
@@ -136,11 +136,19 @@ async def health_loop() -> None:
 # ---------- seeding from Helm values ----------
 
 async def seed() -> None:
-    """Register the servers listed in SEED_SERVERS on first boot (e.g. the store's woo-mcp)."""
+    """Register the servers listed in SEED_SERVERS on first boot (e.g. the store's woo-mcp).
+
+    For servers that already exist, the Kubernetes Secret stays the source of truth for
+    their credential: rotate the Secret, `helm upgrade`, and the new value is picked up."""
     for s in config.SEED_SERVERS:
-        if await db.fetchrow("SELECT 1 FROM servers WHERE slug = $1", s["slug"]):
-            continue
         credential = os.environ.get(s.get("credential_env", ""), "")
+        existing = await db.fetchrow("SELECT id, credential_enc FROM servers WHERE slug = $1", s["slug"])
+        if existing:
+            current = decrypt(existing["credential_enc"]) if existing["credential_enc"] else ""
+            if credential and credential != current:
+                await db.execute("UPDATE servers SET credential_enc = $2 WHERE id = $1", existing["id"], encrypt(credential))
+                log.info("updated credential for %s from its Secret", s["slug"])
+            continue
         auth_type = s.get("auth_type", "none")
         if auth_type != "none" and not credential:
             log.warning("skipping seed server %s: %s is empty", s["slug"], s.get("credential_env"))
