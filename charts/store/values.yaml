@@ -1,0 +1,51 @@
+# Defaults. Environment-specific overrides live in values-local.yaml / values-prod.yaml.
+
+store:
+  domain: store.localtest.me
+  scheme: http            # https in prod (TLS terminated at the ingress)
+  title: Urumi Demo Store
+  timezone: Asia/Kolkata  # "today's orders" depends on this
+  currency: INR
+  adminUser: admin
+  adminEmail: admin@example.com
+
+ingress:
+  className: traefik
+  tls:
+    enabled: false
+    secretName: store-tls
+  annotations: {}
+
+storage:
+  storageClass: ""        # "" = cluster default (local-path on k3d/k3s)
+  wordpressSize: 2Gi
+  mariadbSize: 2Gi
+
+wordpress:
+  image: wordpress:7.1-php8.3-apache
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 768Mi }
+
+mariadb:
+  image: mariadb:11.4
+  database: wordpress
+  user: wordpress
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 1Gi }
+
+wooMcp:
+  enabled: true
+  image: woo-mcp:dev
+  pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 50m,  memory: 96Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+bootstrap:
+  image: wordpress:cli-php8.3
+  woocommerceVersion: ""  # "" = latest from wordpress.org
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: "1",  memory: 512Mi }

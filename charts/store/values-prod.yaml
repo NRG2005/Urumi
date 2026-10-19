@@ -1,0 +1,17 @@
+# k3s VPS. Replace the domain with a real DNS name pointing at the VPS.
+store:
+  domain: store.example.com
+  scheme: https
+ingress:
+  tls:
+    enabled: true
+    secretName: store-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+wooMcp:
+  image: ghcr.io/OWNER/urumi-woo-mcp:0.1.0   # pushed by CI; local uses an imported woo-mcp:dev
+  pullPolicy: IfNotPresent
+storage:
+  storageClass: local-path
+  wordpressSize: 5Gi
+  mariadbSize: 5Gi

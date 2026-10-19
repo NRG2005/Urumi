@@ -1,0 +1,73 @@
+{{- if .Values.wooMcp.enabled }}
+{{- $svc := printf "%s-woo-mcp" .Release.Name -}}
+# ClusterIP only, and no Ingress: woo-mcp is unreachable from outside the cluster.
+# Inside the cluster, a NetworkPolicy narrows it further to gateway pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc }}
+  labels: {{- include "store.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: woo-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svc }}
+  labels: {{- include "store.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: woo-mcp
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "store.labels" . | nindent 8 }}
+        app.kubernetes.io/name: woo-mcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: woo-mcp
+          image: {{ .Values.wooMcp.image }}
+          imagePullPolicy: {{ .Values.wooMcp.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          env:
+            # Talk to WordPress over its in-cluster Service...
+            - name: WOO_INTERNAL_URL
+              value: http://{{ .Release.Name }}-wordpress.{{ .Release.Namespace }}.svc.cluster.local
+            # ...but sign requests for the public URL, which is what WooCommerce verifies against.
+            - name: WOO_PUBLIC_URL
+              value: {{ include "store.url" . | quote }}
+            - name: STORE_TIMEZONE
+              value: {{ .Values.store.timezone | quote }}
+            - name: ALLOWED_HOSTS
+              value: "{{ $svc }}:*,{{ $svc }}.{{ .Release.Namespace }}.svc:*,{{ $svc }}.{{ .Release.Namespace }}.svc.cluster.local:*,localhost:*"
+            - name: WOO_CONSUMER_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Release.Name }}-secrets, key: woo-consumer-key } }
+            - name: WOO_CONSUMER_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Release.Name }}-secrets, key: woo-consumer-secret } }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 6
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.wooMcp.resources | nindent 12 }}
+{{- end }}

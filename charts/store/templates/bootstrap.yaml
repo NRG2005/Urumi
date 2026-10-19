@@ -1,0 +1,139 @@
+{{- /*
+One-shot WP-CLI Job that turns an empty WordPress into a working WooCommerce
+store. Runs after every install/upgrade and is idempotent, so re-running it
+is always safe.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-bootstrap
+  labels: {{- include "store.labels" . | nindent 4 }}
+data:
+  bootstrap.sh: |
+    set -eu
+    cd /var/www/html
+
+    echo "==> waiting for WordPress files (copied by the WordPress pod on first boot)"
+    until [ -f wp-config.php ]; do sleep 3; done
+
+    echo "==> waiting for MariaDB"
+    until php -r 'exit(@mysqli_connect(getenv("WORDPRESS_DB_HOST"), getenv("WORDPRESS_DB_USER"), getenv("WORDPRESS_DB_PASSWORD"), getenv("WORDPRESS_DB_NAME")) ? 0 : 1);'; do sleep 3; done
+
+    if ! wp core is-installed 2>/dev/null; then
+      echo "==> installing WordPress"
+      wp core install --url="$STORE_URL" --title="$STORE_TITLE" \
+        --admin_user="$WP_ADMIN_USER" --admin_password="$WP_ADMIN_PASSWORD" \
+        --admin_email="$WP_ADMIN_EMAIL" --skip-email
+    fi
+    wp option update home "$STORE_URL"
+    wp option update siteurl "$STORE_URL"
+    wp option update timezone_string "$STORE_TIMEZONE"
+    # Pretty permalinks: /wp-json/... REST routes depend on them.
+    wp rewrite structure '/%postname%/'
+
+    echo "==> WooCommerce"
+    if ! wp plugin is-installed woocommerce; then
+      if [ -n "$WOO_VERSION" ]; then
+        wp plugin install woocommerce --version="$WOO_VERSION"
+      else
+        wp plugin install woocommerce
+      fi
+    fi
+    wp plugin activate woocommerce
+    wp eval 'WC_Install::create_pages();'
+
+    wp option update woocommerce_currency "$STORE_CURRENCY"
+    wp option update woocommerce_default_country "IN:KA"
+    # No shipping zones needed for the demo: physical products check out without a shipping method.
+    wp option update woocommerce_ship_to_countries disabled
+    # New stores start in "coming soon" mode, which hides the shop from visitors.
+    wp option update woocommerce_coming_soon no
+    wp option update woocommerce_onboarding_profile '{"skipped":true}' --format=json
+    # Cash on delivery = test-friendly checkout.
+    wp option update woocommerce_cod_settings \
+      '{"enabled":"yes","title":"Cash on delivery","description":"Pay with cash upon delivery.","instructions":"","enable_for_methods":[],"enable_for_virtual":"yes"}' \
+      --format=json
+
+    echo "==> registering the woo-mcp REST API key"
+    # WooCommerce stores the key as an HMAC hash and the secret in plain text,
+    # exactly like keys created in WooCommerce > Settings > Advanced > REST API.
+    wp eval '
+      global $wpdb;
+      $t    = $wpdb->prefix . "woocommerce_api_keys";
+      $ck   = getenv("WOO_CONSUMER_KEY");
+      $user = get_user_by("login", getenv("WP_ADMIN_USER"));
+      $wpdb->delete($t, ["description" => "woo-mcp"]);
+      $wpdb->insert($t, [
+        "user_id"         => $user->ID,
+        "description"     => "woo-mcp",
+        "permissions"     => "read_write",
+        "consumer_key"    => wc_api_hash($ck),
+        "consumer_secret" => getenv("WOO_CONSUMER_SECRET"),
+        "truncated_key"   => substr($ck, -7),
+      ]);
+      echo "api key id: " . $wpdb->insert_id . "\n";
+    '
+
+    if [ "$(wp post list --post_type=product --format=count)" = "0" ]; then
+      echo "==> sample product"
+      wp wc product create --user="$WP_ADMIN_USER" --name="Urumi T-Shirt" --regular_price=499 --status=publish
+    fi
+
+    echo "==> done: $STORE_URL"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-bootstrap
+  labels: {{- include "store.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    # Keep the finished Job around (for `kubectl logs`) until the next run replaces it.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 4
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "store.labels" . | nindent 8 }}
+        app.kubernetes.io/name: store-bootstrap
+    spec:
+      restartPolicy: Never
+      # Same uid as Apache's www-data so files WP-CLI writes stay readable by WordPress.
+      securityContext:
+        runAsUser: 33
+        runAsGroup: 33
+        fsGroup: 33
+      containers:
+        - name: wp-cli
+          image: {{ .Values.bootstrap.image }}
+          command: ["sh", "/scripts/bootstrap.sh"]
+          env:
+            {{- include "store.wpEnv" . | nindent 12 }}
+            - { name: HOME, value: /tmp }
+            - { name: WP_CLI_CACHE_DIR, value: /tmp/wp-cli-cache }
+            - { name: STORE_URL, value: {{ include "store.url" . | quote }} }
+            - { name: STORE_TITLE, value: {{ .Values.store.title | quote }} }
+            - { name: STORE_TIMEZONE, value: {{ .Values.store.timezone | quote }} }
+            - { name: STORE_CURRENCY, value: {{ .Values.store.currency | quote }} }
+            - { name: WOO_VERSION, value: {{ .Values.bootstrap.woocommerceVersion | quote }} }
+            - { name: WP_ADMIN_USER, value: {{ .Values.store.adminUser | quote }} }
+            - { name: WP_ADMIN_EMAIL, value: {{ .Values.store.adminEmail | quote }} }
+            - name: WP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Release.Name }}-secrets, key: wp-admin-password } }
+            - name: WOO_CONSUMER_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Release.Name }}-secrets, key: woo-consumer-key } }
+            - name: WOO_CONSUMER_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Release.Name }}-secrets, key: woo-consumer-secret } }
+          volumeMounts:
+            - { name: html, mountPath: /var/www/html }
+            - { name: scripts, mountPath: /scripts }
+          resources: {{- toYaml .Values.bootstrap.resources | nindent 12 }}
+      volumes:
+        - name: html
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-wordpress
+        - name: scripts
+          configMap:
+            name: {{ .Release.Name }}-bootstrap

@@ -1,0 +1,9 @@
+# Local k3d. *.localtest.me resolves to 127.0.0.1, so no /etc/hosts edits.
+store:
+  domain: store.localtest.me
+  scheme: http
+ingress:
+  tls:
+    enabled: false
+storage:
+  storageClass: local-path
