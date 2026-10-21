@@ -53,3 +53,21 @@ bootstrap:
 networkPolicy:
   enabled: true
   gatewayNamespace: gateway
+
+# Storefront look and demo catalogue, applied by the bootstrap Job (idempotent: existing products are kept).
+storefront:
+  theme: astra
+  tagline: Demo store for the Urumi MCP gateway
+  catalog:
+    - { name: "Urumi T-Shirt", category: T-Shirts, price: "499", featured: true, description: "Soft cotton tee with the Urumi mark.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/tshirt-2.jpg" }
+    - { name: "Hoodie with Logo", category: Hoodies, price: "1299", featured: true, description: "Warm fleece hoodie with an embroidered logo.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/hoodie-with-logo-2.jpg" }
+    - { name: "Hoodie with Pocket", category: Hoodies, price: "1299", sale: "999", description: "Everyday hoodie with a front pocket.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/hoodie-with-pocket-2.jpg" }
+    - { name: "Hoodie with Zipper", category: Hoodies, price: "1499", description: "Full-zip hoodie for cooler evenings.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/hoodie-with-zipper-2.jpg" }
+    - { name: "Long Sleeve Tee", category: T-Shirts, price: "699", description: "Long sleeves, same soft cotton.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/long-sleeve-tee-2.jpg" }
+    - { name: "Polo", category: T-Shirts, price: "799", description: "Classic pique polo.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/polo-2.jpg" }
+    - { name: "T-Shirt with Logo", category: T-Shirts, price: "549", description: "Crew-neck tee with a printed logo.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/t-shirt-with-logo-1.jpg" }
+    - { name: "Beanie", category: Accessories, price: "599", sale: "499", featured: true, description: "Knitted beanie.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/beanie-2.jpg" }
+    - { name: "Beanie with Logo", category: Accessories, price: "599", sale: "499", description: "Knitted beanie with a woven logo.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/beanie-with-logo-1.jpg" }
+    - { name: "Cap", category: Accessories, price: "399", sale: "349", description: "Six-panel cotton cap.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/cap-2.jpg" }
+    - { name: "Belt", category: Accessories, price: "1499", sale: "1199", description: "Full-grain leather belt.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/belt-2.jpg" }
+    - { name: "Sunglasses", category: Accessories, price: "1999", featured: true, description: "Polarised lenses, acetate frame.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/sunglasses-2.jpg" }

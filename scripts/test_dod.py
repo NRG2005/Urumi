@@ -132,6 +132,9 @@ async def main(skip_llm: bool) -> None:
         check("agent called woo__create_product", any(t["tool"] == "woo__create_product" and not t["is_error"] for t in trace), r.text[:120] if r.status_code != 200 else "")
         found = (await httpx2.AsyncClient().get(f"{STORE}/wp-json/wc/store/v1/products", params={"search": name})).json()
         check("the new product appears on the storefront", any(p["name"] == name for p in found))
+        for p in found:  # tidy up: move the test product to the trash (via woo-mcp's own store credentials)
+            kubectl("exec", "-n", "store", "deploy/store-woo-mcp", "--", "python", "-c",
+                    f"import asyncio, server; asyncio.run(server.woo.request('DELETE', '/products/{p['id']}'))")
         await asyncio.sleep(5)  # stay under free-tier tokens-per-minute limits
         r = await user_a.post("/api/chat", json={"messages": [{"role": "user", "content": "What orders came in today? List their order numbers."}]})
         body = r.json() if r.status_code == 200 else {}

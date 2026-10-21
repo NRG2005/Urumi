@@ -77,12 +77,49 @@ data:
       echo "api key id: " . $wpdb->insert_id . "\n";
     '
 
-    if [ "$(wp post list --post_type=product --format=count)" = "0" ]; then
-      echo "==> sample product"
-      wp wc product create --user="$WP_ADMIN_USER" --name="Urumi T-Shirt" --regular_price=499 --status=publish
-    fi
+    echo "==> storefront: theme, homepage, catalogue"
+    wp theme is-installed "$STORE_THEME" || wp theme install "$STORE_THEME"
+    wp theme activate "$STORE_THEME"
+    wp option update blogdescription "$STORE_TAGLINE"
+    wp option update show_on_front page
+    wp option update page_on_front "$(wp option get woocommerce_shop_page_id)"
+    wp eval-file /scripts/catalog.php
 
     echo "==> done: $STORE_URL"
+  catalog.json: {{ .Values.storefront.catalog | toJson | quote }}
+  catalog.php: |
+    <?php
+    // Creates the demo catalogue: one product per entry, skipped if a product with that
+    // name already exists; adds the photo to any catalogue product that has none.
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+
+    foreach (json_decode(file_get_contents('/scripts/catalog.json'), true) as $item) {
+        $found = get_posts(['post_type' => 'product', 'title' => $item['name'], 'post_status' => ['publish', 'draft', 'private'], 'numberposts' => 1]);
+        $product = $found ? wc_get_product($found[0]->ID) : new WC_Product_Simple();
+        if (!$found) {
+            $term = term_exists($item['category'], 'product_cat') ?: wp_insert_term($item['category'], 'product_cat');
+            $product->set_name($item['name']);
+            $product->set_regular_price($item['price']);
+            if (!empty($item['sale'])) { $product->set_sale_price($item['sale']); }
+            $product->set_short_description($item['description'] ?? '');
+            $product->set_featured(!empty($item['featured']));
+            $product->set_category_ids([(int) $term['term_id']]);
+            $product->set_status('publish');
+            $product->save();
+            WP_CLI::log("created {$item['name']}");
+        }
+        if (!$product->get_image_id() && !empty($item['image'])) {
+            $image_id = media_sideload_image($item['image'], $product->get_id(), $item['name'], 'id');
+            if (is_wp_error($image_id)) {
+                WP_CLI::warning("image for {$item['name']}: " . $image_id->get_error_message());
+            } else {
+                $product->set_image_id($image_id);
+                $product->save();
+            }
+        }
+    }
 ---
 apiVersion: batch/v1
 kind: Job
@@ -120,6 +157,8 @@ spec:
             - { name: STORE_TITLE, value: {{ .Values.store.title | quote }} }
             - { name: STORE_TIMEZONE, value: {{ .Values.store.timezone | quote }} }
             - { name: STORE_CURRENCY, value: {{ .Values.store.currency | quote }} }
+            - { name: STORE_THEME, value: {{ .Values.storefront.theme | quote }} }
+            - { name: STORE_TAGLINE, value: {{ .Values.storefront.tagline | quote }} }
             - { name: WOO_VERSION, value: {{ .Values.bootstrap.woocommerceVersion | quote }} }
             - { name: WP_ADMIN_USER, value: {{ .Values.store.adminUser | quote }} }
             - { name: WP_ADMIN_EMAIL, value: {{ .Values.store.adminEmail | quote }} }
