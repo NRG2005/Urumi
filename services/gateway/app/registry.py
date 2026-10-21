@@ -118,16 +118,17 @@ async def check_server(server: dict) -> None:
         log.warning("server %s changed its tool definitions", server["slug"])
 
 
-async def check_all() -> None:
-    servers = await db.fetch("SELECT * FROM servers")
-    # Checked concurrently: one slow server never delays the others.
-    await asyncio.gather(*(check_server(s) for s in servers), return_exceptions=True)
-
-
 async def health_loop() -> None:
+    """Every interval, start a check for each server whose previous check has finished.
+    Servers are checked independently: a slow remote server (several seconds per check)
+    never delays noticing that a local one died."""
+    in_flight: dict[int, asyncio.Task] = {}
     while True:
         try:
-            await check_all()
+            for s in await db.fetch("SELECT * FROM servers"):
+                task = in_flight.get(s["id"])
+                if task is None or task.done():
+                    in_flight[s["id"]] = asyncio.create_task(check_server(s))
         except Exception:  # noqa: BLE001 - keep the loop alive no matter what
             log.exception("health check round failed")
         await asyncio.sleep(config.HEALTH_INTERVAL)

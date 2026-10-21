@@ -3,7 +3,7 @@ CLUSTER := urumi
 # Optional, gitignored file with the LLM key and upstream credentials.
 GATEWAY_SECRETS := $(wildcard charts/gateway/secrets.local.yaml)
 
-.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down
+.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod
 
 up: images store everything gateway   ## Build everything and install all three releases
 	@echo; echo "Store:     http://store.localtest.me"; echo "Dashboard: http://dash.localtest.me  (admin@urumi.local / $$(make -s admin-password))"
@@ -50,3 +50,7 @@ down:               ## Uninstall all releases (volumes and Secrets are kept)
 	-helm uninstall gateway -n gateway
 	-helm uninstall everything -n mcp
 	-helm uninstall store -n store
+
+test-dod:           ## Check every Definition-of-Done item against the live cluster (ARGS=--skip-llm to skip the chat agent)
+	@test -d .venv-test || (python3 -m venv .venv-test && .venv-test/bin/pip install -q mcp==2.3.0)
+	.venv-test/bin/python scripts/test_dod.py $(ARGS)

@@ -31,7 +31,7 @@ SEED_SERVERS: list[dict] = json.loads(os.environ.get("SEED_SERVERS", "[]"))
 INTERNAL_HOST_ALLOWLIST = [h.strip() for h in os.environ.get("INTERNAL_HOST_ALLOWLIST", "").split(",") if h.strip()]
 
 HEALTH_INTERVAL = float(os.environ.get("HEALTH_INTERVAL_SECONDS", "5"))
-HEALTH_TIMEOUT = float(os.environ.get("HEALTH_TIMEOUT_SECONDS", "4"))
+HEALTH_TIMEOUT = float(os.environ.get("HEALTH_TIMEOUT_SECONDS", "10"))
 CALL_TIMEOUT = float(os.environ.get("CALL_TIMEOUT_SECONDS", "20"))
 
 # Any OpenAI-compatible chat-completions API (Groq, Gemini, OpenRouter, a local Ollama...).

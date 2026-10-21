@@ -17,7 +17,7 @@ gateway:
   # Stateless MCP + Postgres-backed state: any replica can serve any request.
   replicas: 2
   healthIntervalSeconds: 5
-  healthTimeoutSeconds: 4
+  healthTimeoutSeconds: 10
   callTimeoutSeconds: 20
   agentTimezone: Asia/Kolkata
   resources:
