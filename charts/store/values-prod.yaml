@@ -9,8 +9,8 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
 wooMcp:
-  image: ghcr.io/OWNER/urumi-woo-mcp:0.1.0   # pushed by CI; local uses an imported woo-mcp:dev
-  pullPolicy: IfNotPresent
+  image: ghcr.io/nrg2005/urumi-woo-mcp:latest   # pushed by CI (.github/workflows/images.yml); local uses an imported woo-mcp:dev
+  pullPolicy: Always
 storage:
   storageClass: local-path
   wordpressSize: 5Gi

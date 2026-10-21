@@ -3,7 +3,7 @@ CLUSTER := urumi
 # Optional, gitignored file with the LLM key and upstream credentials.
 GATEWAY_SECRETS := $(wildcard charts/gateway/secrets.local.yaml)
 
-.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down
+.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down store-backup
 
 up: images store everything gateway   ## Build everything and install all three releases
 	@echo; echo "Store:     http://store.localtest.me"; echo "Dashboard: http://dash.localtest.me  (admin@urumi.local / $$(make -s admin-password))"
@@ -27,7 +27,7 @@ store:              ## WordPress + WooCommerce + MariaDB + woo-mcp, in namespace
 	-kubectl rollout restart deploy/store-woo-mcp -n store
 
 everything:         ## The MCP reference server, in namespace "mcp"
-	helm upgrade --install everything charts/everything -n mcp --create-namespace --wait
+	helm upgrade --install everything charts/everything -n mcp --create-namespace -f charts/everything/values-$(ENV).yaml --wait
 	-kubectl rollout restart deploy/everything -n mcp
 
 gateway:            ## Gateway + Postgres + dashboard, in namespace "gateway"
@@ -65,3 +65,8 @@ rugpull:            ## DEMO ONLY: make the evil server rewrite its tool descript
 
 evil-down:
 	-helm uninstall evil-mcp -n mcp
+
+store-backup:       ## Dump the store database to backups/ (do this before upgrading: helm rollback does not roll back data)
+	@mkdir -p backups
+	kubectl exec -n store store-mariadb-0 -- sh -c 'mariadb-dump -uroot -p"$$MARIADB_ROOT_PASSWORD" --single-transaction wordpress' > backups/store-$$(date +%Y%m%d-%H%M%S).sql
+	@ls -lh backups | tail -1

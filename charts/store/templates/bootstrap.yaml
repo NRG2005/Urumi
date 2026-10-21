@@ -40,6 +40,9 @@ data:
       fi
     fi
     wp plugin activate woocommerce
+    # On upgrades: run WordPress and WooCommerce database migrations for the new versions.
+    wp core update-db
+    wp wc update || true
     wp eval 'WC_Install::create_pages();'
 
     wp option update woocommerce_currency "$STORE_CURRENCY"

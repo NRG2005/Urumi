@@ -7,9 +7,13 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
 gateway:
-  image: ghcr.io/OWNER/urumi-gateway:0.1.0
+  image: ghcr.io/nrg2005/urumi-gateway:latest
+  pullPolicy: Always
 dashboard:
-  image: ghcr.io/OWNER/urumi-dashboard:0.1.0
+  image: ghcr.io/nrg2005/urumi-dashboard:latest
+  pullPolicy: Always
 postgres:
   storageClass: local-path
   size: 5Gi
+# The image tag is "latest" for simplicity; pin a commit SHA tag (pushed by CI) for real
+# upgrades so `helm rollback` returns to exactly the previous build.

@@ -1,0 +1,2 @@
+image: ghcr.io/nrg2005/urumi-everything:latest
+pullPolicy: Always
