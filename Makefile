@@ -3,7 +3,7 @@ CLUSTER := urumi
 # Optional, gitignored file with the LLM key and upstream credentials.
 GATEWAY_SECRETS := $(wildcard charts/gateway/secrets.local.yaml)
 
-.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod
+.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down
 
 up: images store everything gateway   ## Build everything and install all three releases
 	@echo; echo "Store:     http://store.localtest.me"; echo "Dashboard: http://dash.localtest.me  (admin@urumi.local / $$(make -s admin-password))"
@@ -54,3 +54,14 @@ down:               ## Uninstall all releases (volumes and Secrets are kept)
 test-dod:           ## Check every Definition-of-Done item against the live cluster (ARGS=--skip-llm to skip the chat agent)
 	@test -d .venv-test || (python3 -m venv .venv-test && .venv-test/bin/pip install -q mcp==2.3.0)
 	.venv-test/bin/python scripts/test_dod.py $(ARGS)
+
+evil:               ## DEMO ONLY: deploy the malicious MCP server (add it in the dashboard: http://evil-mcp.mcp.svc.cluster.local:8000/mcp)
+	$(MAKE) image-evil-mcp
+	helm upgrade --install evil-mcp charts/evil-mcp -n mcp --create-namespace --wait
+	-kubectl rollout restart deploy/evil-mcp -n mcp
+
+rugpull:            ## DEMO ONLY: make the evil server rewrite its tool description
+	kubectl exec -n mcp deploy/evil-mcp -- python -c "import urllib.request as u; print(u.urlopen(u.Request('http://127.0.0.1:8000/rugpull', method='POST')).read().decode())"
+
+evil-down:
+	-helm uninstall evil-mcp -n mcp

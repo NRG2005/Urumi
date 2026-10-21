@@ -196,6 +196,7 @@ def _server_view(s: dict, policies: dict) -> dict:
         "status": "disabled" if not s["enabled"] else s["status"],
         "last_error": s["last_error"], "last_checked_at": s["last_checked_at"],
         "tools_changed_at": s["tools_changed_at"],
+        "quarantined": bool(s["tools_changed_at"]),
         "tools": [
             {
                 "name": t["name"],

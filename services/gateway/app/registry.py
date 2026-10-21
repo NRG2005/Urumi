@@ -5,6 +5,12 @@ Naming scheme: every tool is exposed as "<server slug>__<tool name>", e.g.
 the first "__" is unambiguous, and two servers with the same tool name never
 collide. Names are stable: adding a server never renames anyone else's tools.
 
+Rug-pull protection: every health check fingerprints a server's tool names,
+descriptions and schemas. If they change after registration, the server is
+quarantined (its tools hidden and calls refused) until an admin reviews and
+approves the new definitions: a description rewritten to manipulate the model
+never reaches one.
+
 Failure isolation: a background loop polls every enabled server and caches its
 tool list in Postgres. tools/list is served from that cache, so a slow or
 dead upstream cannot slow listing down; it just drops out until it recovers.
@@ -55,7 +61,8 @@ async def _policies() -> dict[tuple[int, str], str]:
 
 async def visible_tools(user: dict) -> list[dict]:
     servers = await db.fetch(
-        "SELECT id, slug, name, tools FROM servers WHERE enabled AND status = 'connected' ORDER BY slug"
+        # Quarantined servers (tool definitions changed since an admin last approved them) are hidden.
+        "SELECT id, slug, name, tools FROM servers WHERE enabled AND status = 'connected' AND tools_changed_at IS NULL ORDER BY slug"
     )
     policies = await _policies()
     out = []
@@ -82,6 +89,10 @@ async def resolve(user: dict, prefixed: str) -> tuple[dict, str]:
         raise ToolNotAvailable(f"unknown tool {prefixed!r}", "denied")
     if not server["enabled"]:
         raise ToolNotAvailable(f"server {slug!r} is disabled by an admin", "denied", slug)
+    if server["tools_changed_at"]:
+        raise ToolNotAvailable(
+            f"server {slug!r} changed its tool definitions; it is quarantined until an admin reviews them", "denied", slug
+        )
     if server["status"] == "unreachable":
         # Fail fast instead of waiting out a timeout on a server we already know is down.
         raise ToolNotAvailable(f"server {slug!r} is unreachable: {server['last_error']}", "unreachable", slug)

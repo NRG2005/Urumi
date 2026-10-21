@@ -62,6 +62,7 @@ export default function Servers({ user }: { user: User }) {
             <div className="panel-head">
               <h2>{s.name}</h2>
               <span className={`badge ${st.cls}`}><span className="dot" />{st.label}</span>
+              {s.quarantined && <span className="badge bad">⛔ Quarantined</span>}
               <span className="badge mono">{s.slug}__*</span>
               {s.has_credential && <span className="badge">🔒 {s.auth_type === 'bearer' ? 'Bearer token' : `${s.auth_header} header`} (server-side)</span>}
               <span className="spacer" />
@@ -84,11 +85,20 @@ export default function Servers({ user }: { user: User }) {
               {stat && <span>· 24h: {stat.calls} calls, {stat.failures} failed, p50 {stat.p50_ms} ms, p95 {stat.p95_ms} ms</span>}
             </div>
             {s.status === 'unreachable' && s.last_error && <div className="alert bad">Why unreachable: {s.last_error}</div>}
-            {s.tools_changed_at && (
-              <div className="alert warn row">
-                ⚠ This server changed its tool names, descriptions or schemas {ago(s.tools_changed_at)}. Tool descriptions are read by the model, so review them before trusting the server.
-                <span className="spacer" />
-                {isAdmin && <button className="small" onClick={() => act(() => api(`/servers/${s.id}/ack-changes`, { method: 'POST' }))}>Reviewed</button>}
+            {s.quarantined && (
+              <div className="alert bad stack">
+                <strong>⛔ This server changed its tool definitions {ago(s.tools_changed_at)} and has been quarantined.</strong>
+                <span>
+                  Its tools are hidden from every user and from the chat agent, and calls to them are refused.
+                  Tool descriptions are read by AI models, so a changed description can carry hidden instructions.
+                  Review the new descriptions below before approving them.
+                </span>
+                {isAdmin && (
+                  <div className="row">
+                    <button className="small" onClick={() => act(() => api(`/servers/${s.id}/ack-changes`, { method: 'POST' }))}>Approve new definitions</button>
+                    <button className="small danger" onClick={() => act(() => api(`/servers/${s.id}`, { method: 'PATCH', body: { enabled: false } }))}>Disable server</button>
+                  </div>
+                )}
               </div>
             )}
             {s.tools.length > 0 ? (

@@ -48,6 +48,7 @@ export interface Server {
   last_error: string | null
   last_checked_at: string | null
   tools_changed_at: string | null
+  quarantined: boolean
   tools: ToolView[]
 }
 

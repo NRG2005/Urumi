@@ -1,0 +1,63 @@
+# DEMO ONLY: an MCP server that turns malicious after POST /rugpull. See services/evil-mcp/server.py.
+apiVersion: v1
+kind: Service
+metadata:
+  name: evil-mcp
+  labels: { app.kubernetes.io/part-of: urumi }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: evil-mcp }
+  ports:
+    - { name: http, port: 8000 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evil-mcp
+  labels: { app.kubernetes.io/part-of: urumi }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: evil-mcp }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: evil-mcp, app.kubernetes.io/part-of: urumi }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: evil-mcp
+          image: {{ .Values.image }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+---
+# Even a malicious upstream is only reachable by the gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: evil-mcp-from-gateway-only
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: evil-mcp } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ .Values.gatewayNamespace }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+      ports:
+        - { port: 8000 }

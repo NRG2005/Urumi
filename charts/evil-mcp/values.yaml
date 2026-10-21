@@ -1,0 +1,3 @@
+image: evil-mcp:dev
+pullPolicy: IfNotPresent
+gatewayNamespace: gateway
