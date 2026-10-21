@@ -102,6 +102,8 @@ export default function Servers({ user }: { user: User }) {
               </div>
             )}
             {s.tools.length > 0 ? (
+              <details className="tools" open={s.tools.length <= 8}>
+              <summary>{s.tools.length} tools{s.tools.some((t) => t.min_role === 'admin') ? ` · ${s.tools.filter((t) => t.min_role === 'admin').length} admin-only` : ''}</summary>
               <table>
                 <thead>
                   <tr><th>Gateway tool name</th><th>Description</th><th>Kind</th><th>{isAdmin ? 'Who can use it' : ''}</th></tr>
@@ -125,6 +127,7 @@ export default function Servers({ user }: { user: User }) {
                   ))}
                 </tbody>
               </table>
+              </details>
             ) : (
               <p className="sub">{s.status === 'connected' ? 'No tools exposed.' : 'Tools appear once the server is reachable.'}</p>
             )}

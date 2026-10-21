@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, type Config, type User } from '../api'
+import { Markdown } from '../markdown'
 
 // OpenAI-format messages, kept in the browser and sent back each turn.
 interface Msg { role: 'user' | 'assistant' | 'tool'; content: string; tool_calls?: unknown[]; tool_call_id?: string }
@@ -83,7 +84,7 @@ export default function Chat({ user }: { user: User }) {
                   ))}
                 </div>
               )}
-              {t.reply !== undefined && <div className="msg assistant">{t.reply || '(no text reply)'}</div>}
+              {t.reply !== undefined && <div className="msg assistant md">{t.reply ? <Markdown text={t.reply} /> : '(no text reply)'}</div>}
               {t.error && <div className="alert bad" style={{ alignSelf: 'flex-start' }}>{t.error}</div>}
             </div>
           ))}
