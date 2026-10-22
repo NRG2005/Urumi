@@ -60,6 +60,10 @@ upstreams:
     - slug: everything
       name: Everything (MCP reference server)
       url: http://everything.mcp.svc.cluster.local:3001/mcp
+    # Public, no account needed: a fresh clone gets three upstreams even without a GitHub token.
+    - slug: deepwiki
+      name: DeepWiki
+      url: https://mcp.deepwiki.com/mcp
     - slug: github
       name: GitHub
       url: https://api.githubcopilot.com/mcp/x/issues

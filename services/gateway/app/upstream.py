@@ -34,12 +34,12 @@ def _auth_headers(server: dict) -> dict[str, str]:
     return {server["auth_header"]: credential}
 
 
-def describe(exc: BaseException) -> str:
+def describe(exc: BaseException, timeout: float | None = None) -> str:
     """Unwrap anyio exception groups to the first real cause."""
     while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
         exc = exc.exceptions[0]
     if isinstance(exc, TimeoutError):
-        return "timed out"
+        return f"timed out after {timeout:g}s" if timeout else "timed out"
     if isinstance(exc, httpx2.ConnectError):
         return "connection refused or host not found"
     text = str(exc) or exc.__class__.__name__
@@ -69,7 +69,7 @@ async def list_tools(server: dict, timeout: float) -> list[dict[str, Any]]:
     except BaseException as exc:  # noqa: BLE001 - anyio raises groups; all failures mean "unreachable"
         if isinstance(exc, (KeyboardInterrupt, SystemExit, anyio.get_cancelled_exc_class())) and not isinstance(exc, TimeoutError):
             raise
-        raise UpstreamError(describe(exc)) from None
+        raise UpstreamError(describe(exc, timeout)) from None
 
 
 async def call_tool(server: dict, tool: str, arguments: dict[str, Any] | None, timeout: float) -> CallToolResult:
@@ -80,4 +80,4 @@ async def call_tool(server: dict, tool: str, arguments: dict[str, Any] | None, t
     except BaseException as exc:  # noqa: BLE001
         if isinstance(exc, (KeyboardInterrupt, SystemExit, anyio.get_cancelled_exc_class())) and not isinstance(exc, TimeoutError):
             raise
-        raise UpstreamError(describe(exc)) from None
+        raise UpstreamError(describe(exc, timeout)) from None

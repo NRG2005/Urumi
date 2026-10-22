@@ -23,6 +23,8 @@ import logging
 import os
 import re
 
+from mcp.types import Tool
+
 from . import config, db, upstream
 from .security import decrypt, encrypt
 
@@ -46,6 +48,33 @@ def _fingerprint(tools: list[dict]) -> str:
     """Hash of what the model reads: names, descriptions and schemas."""
     view = sorted((t["name"], t.get("description", ""), json.dumps(t.get("inputSchema", {}), sort_keys=True)) for t in tools)
     return hashlib.sha256(json.dumps(view).encode()).hexdigest()
+
+
+_warned: set[tuple[str, str | None]] = set()
+
+
+def _normalise(server_slug: str, tools: list[dict]) -> list[dict]:
+    """Make upstream tool definitions spec-conformant before we cache and re-serve them.
+    One upstream publishing an invalid schema must not break tools/list for everyone, so:
+    an outputSchema whose top-level type isn't "object" is dropped (it is an optional hint),
+    and a tool whose inputSchema still isn't valid is skipped."""
+    clean = []
+    for t in tools:
+        key = (server_slug, t.get("name"))
+        t = dict(t)
+        out = t.get("outputSchema")
+        if out is not None and (not isinstance(out, dict) or out.get("type") != "object"):
+            if key not in _warned:  # health checks run every few seconds; say it once
+                _warned.add(key)
+                log.warning("%s/%s: dropping non-conformant outputSchema (type=%r)", server_slug, t.get("name"), (out or {}).get("type") if isinstance(out, dict) else out)
+            t.pop("outputSchema")
+        try:
+            Tool.model_validate(t)
+        except ValueError as exc:
+            log.warning("%s/%s: skipping tool with invalid definition: %s", server_slug, t.get("name"), str(exc)[:200])
+            continue
+        clean.append(t)
+    return clean
 
 
 def _allowed(role: str, min_role: str) -> bool:
@@ -111,7 +140,7 @@ async def check_server(server: dict) -> None:
         await db.execute("UPDATE servers SET status = 'disabled', last_checked_at = now() WHERE id = $1", server["id"])
         return
     try:
-        tools = await upstream.list_tools(server, config.HEALTH_TIMEOUT)
+        tools = _normalise(server["slug"], await upstream.list_tools(server, config.HEALTH_TIMEOUT))
     except upstream.UpstreamError as exc:
         await db.execute(
             "UPDATE servers SET status = 'unreachable', last_error = $2, last_checked_at = now() WHERE id = $1",

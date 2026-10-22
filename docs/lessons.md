@@ -59,6 +59,10 @@ Let's Encrypt's HTTP-01 check got a 502. cert-manager answers it with a temporar
 On an https store reached over in-cluster http, WooCommerce builds the signed URL from its home *host* and the *incoming request's* scheme (http). Signing for `https://…` would fail. Caught by reasoning about it before the first deploy rather than by a failure.
 **Fix:** sign for `<internal scheme>://<public host>`.
 
-### 14. Small things
+### 14. One upstream's schema broke tool listing for everyone
+A from-scratch reinstall (the check a reviewer would do) failed one test: the chat agent's tool listing errored. GitHub's hosted MCP server now publishes four tools whose `outputSchema` type is `["object", "null"]` or `["null", "array"]`. The MCP spec requires `"object"`, and the SDK validates the gateway's whole `tools/list` result, so one non-conformant upstream tool made the entire aggregated list invalid.
+**Fix:** the gateway normalises definitions when it caches them. A non-conformant `outputSchema` (an optional hint) is dropped, a tool that still doesn't validate is skipped, and either case is logged once. **Lesson:** a gateway must treat upstream definitions as untrusted input for *correctness*, not just security. Also: re-run the from-scratch install, because upgraded environments hide what a fresh one hits.
+
+### 15. Small things
 - **Helm's `checksum/config` annotation can't include the file it lives in** (infinite recursion). The ConfigMap moved to its own template.
 - **MCP SDK v2** renamed `FastMCP` to `MCPServer`, added the 2026-07-28 stateless protocol revision, and turns on DNS-rebinding protection by default when bound to localhost. An in-cluster MCP server must set `allowed_hosts` or every request through its Service is rejected.

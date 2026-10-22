@@ -49,8 +49,8 @@ An admin connects MCP servers once in the dashboard. Every team member then gets
               │ MCP (Streamable HTTP), credential injected server-side                 │
    ┌──────────┼───────────────────────┬──────────────────────────────┐                 │
    ▼ ns: store│                       ▼ ns: mcp                      ▼ internet         ▼
- woo-mcp ─► WordPress + WooCommerce ◄─┘ "everything" reference     GitHub's hosted   Shoppers
- (ClusterIP only)   │                   server (kill-the-pod demo)  MCP server (PAT)
+ woo-mcp ─► WordPress + WooCommerce ◄─┘ "everything" reference     GitHub (PAT) and  Shoppers
+ (ClusterIP only)   │                   server (kill-the-pod demo)  DeepWiki (public)
                  MariaDB
 ```
 
@@ -60,7 +60,7 @@ An admin connects MCP servers once in the dashboard. Every team member then gets
 | WooCommerce MCP server | 5 tools over Streamable HTTP, written from scratch | [`services/woo-mcp`](services/woo-mcp) |
 | Gateway | Aggregating MCP server, REST API, streaming chat agent | [`services/gateway`](services/gateway) |
 | Dashboard | React (Vite) app with light and dark themes, served by nginx | [`dashboard`](dashboard) |
-| Other upstreams | MCP reference server (in-cluster), GitHub's hosted MCP server (needs a token) | [`charts/everything`](charts/everything), [`charts/gateway/values.yaml`](charts/gateway/values.yaml) |
+| Other upstreams | MCP reference server (in-cluster), DeepWiki (public, no account), GitHub's hosted MCP server (needs a token, shows server-side credential injection) | [`charts/everything`](charts/everything), [`charts/gateway/values.yaml`](charts/gateway/values.yaml) |
 
 **How a tool call travels** (details in [docs/design.md](docs/design.md)):
 
@@ -95,7 +95,7 @@ upstreams:
     GITHUB_TOKEN: "github_pat_…"   # fine-grained PAT, Issues: read & write on one repository
 ```
 
-Without a GitHub token the GitHub server is simply not registered. Without an LLM key the chat agent says so, and everything else works.
+Without a GitHub token the GitHub server is simply not registered, and you still have three upstreams: WooCommerce, the in-cluster reference server and DeepWiki. Without an LLM key the chat agent says so, and everything else works.
 
 **2. Create the cluster and install everything:**
 

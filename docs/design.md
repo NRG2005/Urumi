@@ -58,6 +58,7 @@ Each description is also prefixed with the server's display name (`[WooCommerce]
 A background loop checks every server every 5 s (`registry.health_loop`). Each server is checked independently with its own 10 s timeout, so a slow remote server (GitHub needs about 4 s from here) never delays noticing that a local pod died. A check lists the server's tools and caches them in Postgres with the status:
 
 - **`tools/list` is served from that cache**, so listing never waits on an upstream and a dead upstream cannot slow it down. It returns the tools of servers that are enabled, connected and not quarantined, filtered by the caller's role.
+- **Definitions are normalised on the way in.** Upstream tool definitions are untrusted input. An `outputSchema` that isn't a top-level object is dropped, and a tool that still isn't valid MCP is skipped. One non-conformant upstream tool would otherwise make the gateway's whole aggregated `tools/list` invalid (this happened with GitHub's server; see lessons #14).
 - **A dead server** goes `unreachable` within one interval (tested: about 4 s after scaling it to zero), drops out of the tool list, and calls to it fail in milliseconds with the reason (`connection refused`, `timed out`, …) instead of hanging. Other servers are unaffected. It recovers on its own at the next successful check.
 - **A slow server** is bounded by the call timeout and returns a clear error result.
 
