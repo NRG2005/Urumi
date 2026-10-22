@@ -54,6 +54,7 @@ async def me(user: dict = Depends(current_user)):
 async def client_config(user: dict = Depends(current_user)):
     return {
         "mcp_url": f"{config.PUBLIC_URL}/mcp",
+        "environment": "local" if "localtest.me" in config.PUBLIC_URL or "localhost" in config.PUBLIC_URL else "production",
         "llm_configured": bool(config.LLM_API_KEY),
         "llm_model": config.LLM_MODEL,
     }
@@ -350,6 +351,22 @@ async def stats(_: dict = Depends(current_user)):
            FROM audit_log WHERE ts > now() - interval '24 hours' AND server_slug IS NOT NULL
            GROUP BY server_slug ORDER BY server_slug"""
     )
+
+
+@router.get("/stats/timeseries")
+async def timeseries(user: dict = Depends(current_user)):
+    """Tool calls per hour for the last 24 hours (members: their own), split by outcome."""
+    only_user = None if user["role"] == "admin" else user["id"]
+    rows = await db.fetch(
+        """SELECT h.hour,
+                  count(a.id) FILTER (WHERE a.outcome = 'success') AS ok,
+                  count(a.id) FILTER (WHERE a.outcome <> 'success') AS failed
+           FROM generate_series(date_trunc('hour', now()) - interval '23 hours', date_trunc('hour', now()), interval '1 hour') AS h(hour)
+           LEFT JOIN audit_log a ON date_trunc('hour', a.ts) = h.hour AND ($1::int IS NULL OR a.user_id = $1)
+           GROUP BY h.hour ORDER BY h.hour""",
+        only_user,
+    )
+    return rows
 
 
 # ---------- chat agent ----------

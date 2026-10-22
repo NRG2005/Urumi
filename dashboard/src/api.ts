@@ -76,7 +76,9 @@ export interface AuditEntry {
 
 export interface Stat { server_slug: string; calls: number; failures: number; p50_ms: number; p95_ms: number }
 
-export interface Config { mcp_url: string; llm_configured: boolean; llm_model: string }
+export interface Config { mcp_url: string; environment: 'local' | 'production'; llm_configured: boolean; llm_model: string }
+
+export interface Hour { hour: string; ok: number; failed: number }
 
 export const fmtTime = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' }) : '—'

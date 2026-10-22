@@ -10,3 +10,4 @@ venv/
 .venv-test/
 backups/
 notes/
+.design/

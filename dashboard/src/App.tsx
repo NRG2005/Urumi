@@ -1,152 +1,186 @@
-import { useEffect, useState } from 'react'
-import { api, ApiError, type User } from './api'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { api, type Config, type User } from './api'
+import Login, { AcceptInvite } from './Login'
 import Audit from './pages/Audit'
 import Chat from './pages/Chat'
 import Keys from './pages/Keys'
 import Members from './pages/Members'
 import Overview from './pages/Overview'
 import Servers from './pages/Servers'
+import { Avatar, Icon, type IconName, Logo, Menu, ToastProvider, useTheme } from './ui'
 
-type Page = 'overview' | 'chat' | 'servers' | 'keys' | 'members' | 'audit'
+export type Page = 'overview' | 'chat' | 'servers' | 'keys' | 'members' | 'audit'
+/** One-shot requests from the command palette to a page, e.g. "open the new-key dialog". */
+export type Intent = 'new-key' | 'add-server' | 'invite' | null
+export interface Nav { go: (page: Page, intent?: Intent) => void; intent: Intent; clearIntent: () => void }
 
-// Icons: 24x24 stroke paths (Lucide-style), drawn inline so the bundle has no icon dependency.
-const ICONS: Record<Page, string> = {
-  overview: 'M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z',
-  chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-  servers: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
-  keys: 'M15 7a4 4 0 1 1-3.9 4.9L3 20v-3l2-2h2v-2h2l1.1-1.1A4 4 0 0 1 15 7z',
-  members: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
-  audit: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2 2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2M9 12h6M9 16h6',
-}
-
-const NAV: { id: Page; label: string; admin?: boolean }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'chat', label: 'Chat agent' },
-  { id: 'servers', label: 'MCP servers' },
-  { id: 'keys', label: 'API keys & connect' },
-  { id: 'members', label: 'Team', admin: true },
-  { id: 'audit', label: 'Audit log' },
+const NAV: { id: Page; label: string; icon: IconName; admin?: boolean; group: 'Workspace' | 'Admin' }[] = [
+  { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace' },
+  { id: 'chat', label: 'Chat agent', icon: 'chat', group: 'Workspace' },
+  { id: 'keys', label: 'Connect & keys', icon: 'key', group: 'Workspace' },
+  { id: 'servers', label: 'MCP servers', icon: 'servers', group: 'Workspace' },
+  { id: 'audit', label: 'Audit log', icon: 'audit', group: 'Workspace' },
+  { id: 'members', label: 'Team', icon: 'team', admin: true, group: 'Admin' },
 ]
 
-function Icon({ d }: { d: string }) {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={d} />
-    </svg>
-  )
+export default function App() {
+  return <ToastProvider><Root /></ToastProvider>
 }
 
-export default function App() {
+function Root() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) as Page) || 'overview')
+  const [theme, toggleTheme] = useTheme()
   const inviteToken = location.pathname.startsWith('/invite/') ? location.pathname.split('/')[2] : null
 
-  useEffect(() => {
-    api<User>('/me').then(setUser).catch(() => setUser(null))
-  }, [])
-
-  useEffect(() => {
-    location.hash = page
-  }, [page])
+  useEffect(() => { api<User>('/me').then(setUser).catch(() => setUser(null)) }, [])
 
   if (user === undefined) return null
   if (inviteToken && !user) return <AcceptInvite token={inviteToken} onDone={setUser} />
   if (!user) return <Login onDone={setUser} />
+  return <Shell user={user} theme={theme} toggleTheme={toggleTheme} onSignOut={() => setUser(null)} />
+}
 
-  const logout = async () => {
-    await api('/auth/logout', { method: 'POST' })
-    setUser(null)
-  }
+function Shell({ user, theme, toggleTheme, onSignOut }: { user: User; theme: string; toggleTheme: () => void; onSignOut: () => void }) {
+  const [page, setPage] = useState<Page>(() => {
+    const p = location.hash.slice(1) as Page
+    return NAV.some((n) => n.id === p) ? p : 'overview'
+  })
+  const [intent, setIntent] = useState<Intent>(null)
+  const [palette, setPalette] = useState(false)
+  const [cfg, setCfg] = useState<Config | null>(null)
+  const isAdmin = user.role === 'admin'
+
+  useEffect(() => { api<Config>('/config').then(setCfg) }, [])
+  useEffect(() => { history.replaceState(null, '', `#${page}`) }, [page])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const go = useCallback((p: Page, i: Intent = null) => { setPage(p); setIntent(i) }, [])
+  const nav: Nav = { go, intent, clearIntent: () => setIntent(null) }
+
+  const signOut = async () => { await api('/auth/logout', { method: 'POST' }); onSignOut() }
+  const items = NAV.filter((n) => !n.admin || isAdmin)
 
   return (
-    <div className="app">
+    <div className="shell">
       <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">U</div>
-          <div>Urumi<div className="brand-sub">MCP Gateway</div></div>
+        <div className="workspace">
+          <Logo />
+          <span className="workspace-name">Urumi</span>
+          {cfg && <span className={`env-pill ${cfg.environment}`}>{cfg.environment === 'production' ? 'Prod' : 'Local'}</span>}
         </div>
-        {NAV.filter((n) => !n.admin || user.role === 'admin').map((n) => (
-          <button key={n.id} className={`nav ${page === n.id ? 'active' : ''}`} onClick={() => setPage(n.id)}>
-            <Icon d={ICONS[n.id]} />
-            {n.label}
+        <button className="search-trigger" onClick={() => setPalette(true)}>
+          <Icon name="search" size={14} /><span>Search or jump to…</span><span className="spacer" /><span className="kbd">⌘K</span>
+        </button>
+        {(['Workspace', 'Admin'] as const).map((group) => {
+          const groupItems = items.filter((n) => n.group === group)
+          if (!groupItems.length) return null
+          return (
+            <div key={group}>
+              <div className="nav-label">{group}</div>
+              {groupItems.map((n) => (
+                <button key={n.id} className={`nav${page === n.id ? ' active' : ''}`} onClick={() => go(n.id)}>
+                  <Icon name={n.icon} />{n.label}
+                </button>
+              ))}
+            </div>
+          )
+        })}
+        <Menu className="up" trigger={(toggle) => (
+          <button className="user-chip" onClick={toggle}>
+            <Avatar name={user.name || user.email} large />
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <div className="ellipsis" style={{ fontWeight: 500 }}>{user.name || user.email.split('@')[0]}</div>
+              <div className="ellipsis tiny muted">{user.role === 'admin' ? 'Admin' : 'Member'} · {user.email}</div>
+            </span>
+            <Icon name="more" />
           </button>
-        ))}
-        <div className="sidebar-foot">
-          <div className="who">{user.name || user.email}</div>
-          <div className="row" style={{ marginTop: 6 }}>
-            <span className="badge accent">{user.role}</span>
-            <span className="spacer" />
-            <button className="small" onClick={logout}>Sign out</button>
-          </div>
-        </div>
+        )}>
+          <button onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} />{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
+          <button onClick={() => setPalette(true)}><Icon name="search" />Command menu<span className="spacer" /><span className="kbd">⌘K</span></button>
+          <hr />
+          <button className="danger" onClick={signOut}><Icon name="logout" />Sign out</button>
+        </Menu>
       </aside>
+
       <main className="main">
-        {page === 'overview' && <Overview user={user} go={setPage} />}
+        {page === 'overview' && <Overview user={user} nav={nav} />}
         {page === 'chat' && <Chat user={user} />}
-        {page === 'servers' && <Servers user={user} />}
-        {page === 'keys' && <Keys user={user} />}
-        {page === 'members' && user.role === 'admin' && <Members user={user} />}
+        {page === 'servers' && <Servers user={user} nav={nav} />}
+        {page === 'keys' && <Keys user={user} nav={nav} />}
+        {page === 'members' && isAdmin && <Members user={user} nav={nav} />}
         {page === 'audit' && <Audit user={user} />}
       </main>
+
+      {palette && (
+        <Palette
+          onClose={() => setPalette(false)}
+          commands={[
+            ...items.map((n) => ({ group: 'Go to', label: n.label, icon: n.icon, run: () => go(n.id) })),
+            { group: 'Actions', label: 'Generate an API key', icon: 'key' as IconName, run: () => go('keys', 'new-key') },
+            { group: 'Actions', label: 'Ask the chat agent', icon: 'chat' as IconName, run: () => go('chat') },
+            ...(isAdmin ? [
+              { group: 'Actions', label: 'Add an MCP server', icon: 'plus' as IconName, run: () => go('servers', 'add-server') },
+              { group: 'Actions', label: 'Invite a teammate', icon: 'userPlus' as IconName, run: () => go('members', 'invite') },
+            ] : []),
+            { group: 'Preferences', label: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', icon: (theme === 'dark' ? 'sun' : 'moon') as IconName, run: toggleTheme },
+            { group: 'Preferences', label: 'Sign out', icon: 'logout' as IconName, run: signOut },
+          ]}
+        />
+      )}
     </div>
   )
 }
 
-function Login({ onDone }: { onDone: (u: User) => void }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+interface Command { group: string; label: string; icon: IconName; run: () => void }
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      onDone(await api<User>('/auth/login', { body: { email, password } }))
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'sign-in failed')
-    }
+function Palette({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
+  const [q, setQ] = useState('')
+  const [active, setActive] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
+  const results = useMemo(() => {
+    const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
+    return commands.filter((c) => terms.every((t) => `${c.group} ${c.label}`.toLowerCase().includes(t)))
+  }, [q, commands])
+
+  useEffect(() => setActive(0), [q])
+  useEffect(() => { listRef.current?.querySelector('.active')?.scrollIntoView({ block: 'nearest' }) }, [active])
+
+  const run = (c?: Command) => { if (c) { onClose(); c.run() } }
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, results.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
+    else if (e.key === 'Enter') run(results[active])
+    else if (e.key === 'Escape') onClose()
   }
 
+  let lastGroup = ''
   return (
-    <div className="center">
-      <form className="card stack" onSubmit={submit}>
-        <div className="brand-mark" style={{ color: 'white' }}>U</div>
-        <h1>Sign in to Urumi Gateway</h1>
-        <p className="sub">One MCP endpoint for every tool your team uses.</p>
-        {error && <div className="alert bad">{error}</div>}
-        <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} autoFocus /></label>
-        <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-        <button className="primary" type="submit">Sign in</button>
-      </form>
-    </div>
-  )
-}
-
-function AcceptInvite({ token, onDone }: { token: string; onDone: (u: User) => void }) {
-  const [name, setName] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      const user = await api<User>('/auth/accept-invite', { body: { token, name, password } })
-      history.replaceState(null, '', '/')
-      onDone(user)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'could not accept invite')
-    }
-  }
-
-  return (
-    <div className="center">
-      <form className="card stack" onSubmit={submit}>
-        <h1>Join your team on Urumi</h1>
-        <p className="sub">Choose a name and password to finish setting up your account.</p>
-        {error && <div className="alert bad">{error}</div>}
-        <label>Your name<input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></label>
-        <label>Password (8+ characters)<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-        <button className="primary" type="submit">Create account</button>
-      </form>
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="palette" role="dialog" aria-label="Command menu">
+        <input autoFocus placeholder="Type a command or search…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} />
+        <div className="palette-list" ref={listRef}>
+          {results.length === 0 && <div className="empty small">No matching commands</div>}
+          {results.map((c, i) => {
+            const header = c.group !== lastGroup ? <div className="palette-group">{c.group}</div> : null
+            lastGroup = c.group
+            return (
+              <div key={c.group + c.label}>
+                {header}
+                <div className={`palette-item${i === active ? ' active' : ''}`} onMouseEnter={() => setActive(i)} onClick={() => run(c)}>
+                  <Icon name={c.icon} />{c.label}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div className="palette-foot"><span><span className="kbd">↑↓</span> navigate</span><span><span className="kbd">↵</span> select</span><span><span className="kbd">esc</span> close</span></div>
+      </div>
     </div>
   )
 }
