@@ -3,7 +3,7 @@ CLUSTER := urumi
 # Optional, gitignored file with the LLM key and upstream credentials.
 GATEWAY_SECRETS := $(wildcard charts/gateway/secrets.local.yaml)
 
-.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down store-backup
+.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down store-backup vps-tunnel vps-kubeconfig vps-up vps-test
 
 up: images store everything gateway   ## Build everything and install all three releases
 	@echo; echo "Store:     http://store.localtest.me"; echo "Dashboard: http://dash.localtest.me  (admin@urumi.local / $$(make -s admin-password))"
@@ -70,3 +70,22 @@ store-backup:       ## Dump the store database to backups/ (do this before upgra
 	@mkdir -p backups
 	kubectl exec -n store store-mariadb-0 -- sh -c 'mariadb-dump -uroot -p"$$MARIADB_ROOT_PASSWORD" --single-transaction wordpress' > backups/store-$$(date +%Y%m%d-%H%M%S).sql
 	@ls -lh backups | tail -1
+
+# ---- VPS (k3s) ----------------------------------------------------------------
+VPS_IP ?= 4.194.18.91
+VPS_KEY ?= ~/.ssh/urumi-key.pem
+VPS_USER ?= azureuser
+
+vps-tunnel:         ## Open an SSH tunnel to the VPS's Kubernetes API (port 6443 stays closed to the internet)
+	ssh -i $(VPS_KEY) -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -f -N -L 16443:127.0.0.1:6443 $(VPS_USER)@$(VPS_IP)
+	@echo "now: export KUBECONFIG=~/.kube/urumi-vps.yaml"
+
+vps-kubeconfig:     ## Fetch the VPS kubeconfig (points at the tunnel) into ~/.kube/urumi-vps.yaml
+	ssh -i $(VPS_KEY) $(VPS_USER)@$(VPS_IP) 'sudo cat /etc/rancher/k3s/k3s.yaml' | sed 's#https://127.0.0.1:6443#https://127.0.0.1:16443#; s/: default$$/: urumi-vps/' > ~/.kube/urumi-vps.yaml
+	chmod 600 ~/.kube/urumi-vps.yaml
+
+vps-up:             ## Deploy everything to the VPS (needs vps-tunnel; uses values-prod.yaml)
+	KUBECONFIG=~/.kube/urumi-vps.yaml $(MAKE) store everything gateway ENV=prod
+
+vps-test:           ## Run the Definition-of-Done check against the VPS
+	KUBECONFIG=~/.kube/urumi-vps.yaml URUMI_STORE_URL=https://store.$(VPS_IP).sslip.io URUMI_DASH_URL=https://dash.$(VPS_IP).sslip.io $(MAKE) test-dod

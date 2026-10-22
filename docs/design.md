@@ -7,7 +7,7 @@
 | `store` | WordPress + WooCommerce (Apache) | Deployment, `Recreate` | Ingress `store.<domain>` | PVC 2 Gi (`/var/www/html`) |
 | `store` | MariaDB 11.4 | StatefulSet | ClusterIP only | PVC 2 Gi |
 | `store` | woo-mcp | Deployment | **ClusterIP only, no Ingress** | none |
-| `store` | bootstrap | Job (Helm post-install/upgrade hook) | — | mounts the WordPress PVC |
+| `store` | bootstrap | Job, one per Helm revision | — | mounts the WordPress PVC |
 | `mcp` | MCP reference server ("everything") | Deployment | ClusterIP only | none |
 | `gateway` | gateway (FastAPI + MCP SDK) | Deployment, 2 replicas | Ingress `dash.<domain>/api`, `/mcp` | none (state in Postgres) |
 | `gateway` | Postgres 17 | StatefulSet | ClusterIP only | PVC 1 Gi |
@@ -23,7 +23,7 @@ Every container has readiness and liveness probes plus CPU/memory requests and l
 
 1. Helm generates every store credential into the `store-secrets` Secret on first install (DB passwords, WordPress admin password, WooCommerce consumer key and secret). `lookup` reads the existing Secret on upgrade, so values stay stable, and the Secret is kept on uninstall because the database volume outlives the release.
 2. The official WordPress image writes `wp-config.php` from environment variables. `WP_HOME`/`WP_SITEURL` come from Helm values, because WordPress otherwise stores its URL in the database and a VPS deploy would redirect to `localhost`.
-3. A post-install/post-upgrade Job runs WP-CLI against the same volume: install WordPress, install and activate WooCommerce, run DB migrations, set timezone and currency, turn off "coming soon" mode, disable shipping (so checkout needs no shipping zones), enable Cash on delivery, and insert the WooCommerce REST API key (HMAC-hashed exactly as WooCommerce stores it). It is idempotent and safe to re-run.
+3. A Job (one per Helm revision, so every install and upgrade runs it once) runs WP-CLI against the same volume: install WordPress, install and activate WooCommerce, run DB migrations, set timezone and currency, turn off "coming soon" mode, disable shipping (so checkout needs no shipping zones), enable Cash on delivery, and insert the WooCommerce REST API key (HMAC-hashed exactly as WooCommerce stores it). It is idempotent and safe to re-run.
 
 ## How woo-mcp talks to the store, and why
 

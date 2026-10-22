@@ -1,0 +1,19 @@
+# Production only (k3s): redirect every http:// request to https://.
+# k3s ships Traefik as a Helm chart and lets you override its values with a HelmChartConfig:
+#   kubectl apply -f deploy/traefik-https-redirect.yaml
+# Let's Encrypt HTTP-01 checks still work: they follow the redirect to the same path over https.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true

@@ -124,12 +124,12 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ .Release.Name }}-bootstrap
+  # A plain Job (not a Helm hook), named per release revision so every install/upgrade runs it
+  # once. It runs alongside the other pods instead of after `helm --wait`: woo-mcp only becomes
+  # ready once the store is set up, so a post-install hook would wait forever on a first install.
+  # Helm deletes the previous revision's Job; the latest one stays for `kubectl logs`.
+  name: {{ .Release.Name }}-bootstrap-{{ .Release.Revision }}
   labels: {{- include "store.labels" . | nindent 4 }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    # Keep the finished Job around (for `kubectl logs`) until the next run replaces it.
-    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   backoffLimit: 4
   activeDeadlineSeconds: 900

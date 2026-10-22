@@ -11,6 +11,7 @@ and user B (member, uses a plain MCP client, like Claude Code would).
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import time
@@ -20,8 +21,10 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 
-STORE = "http://store.localtest.me"
-DASH = "http://dash.localtest.me"
+# Defaults target the local k3d cluster; point at a VPS with
+#   URUMI_STORE_URL=https://store.… URUMI_DASH_URL=https://dash.… KUBECONFIG=… make test-dod
+STORE = os.environ.get("URUMI_STORE_URL", "http://store.localtest.me").rstrip("/")
+DASH = os.environ.get("URUMI_DASH_URL", "http://dash.localtest.me").rstrip("/")
 RESULTS: list[tuple[str, bool, str]] = []
 
 

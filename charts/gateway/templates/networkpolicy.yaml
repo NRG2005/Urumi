@@ -39,4 +39,18 @@ spec:
         - podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
       ports:
         - { port: 5432 }
+---
+# cert-manager's temporary HTTP-01 solver pods (production TLS) must be reachable from Traefik,
+# or Let's Encrypt's domain check gets a 502 and the certificate never issues.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-solver
+spec:
+  podSelector: { matchLabels: { acme.cert-manager.io/http01-solver: "true" } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
 {{- end }}

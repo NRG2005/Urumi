@@ -47,6 +47,18 @@ Groq's free tier allows 8,000 tokens per minute; 37 tool schemas cost ~5,800 tok
 The model guessed `woo__list_products` without searching. Groq validates tool calls against the request's tool list server-side and rejected the whole completion (HTTP 400).
 **Fix:** the agent pre-loads tools matching the user's message, and if the model calls a real-but-unloaded tool, loads it and retries.
 
-### 11. Small things
+### 11. First install on the VPS deadlocked
+The store's setup Job was a Helm `post-install` hook, so it runs *after* `helm --wait` sees every pod ready. But woo-mcp is only ready once the store is set up. Locally this never showed up, because the store had been installed before woo-mcp existed.
+**Fix:** a plain Job named per revision (`store-bootstrap-<revision>`) that runs alongside everything else; woo-mcp becomes ready as soon as it finishes.
+
+### 12. My own firewall blocked the TLS certificate
+Let's Encrypt's HTTP-01 check got a 502. cert-manager answers it with a temporary solver pod, and the namespace's default-deny NetworkPolicy blocked Traefik from reaching it.
+**Fix:** a NetworkPolicy allowing Traefik to reach pods labelled `acme.cert-manager.io/http01-solver`. **Lesson:** default-deny is right, but every new kind of traffic needs its rule, including platform components you didn't write.
+
+### 13. https changes the OAuth signature
+On an https store reached over in-cluster http, WooCommerce builds the signed URL from its home *host* and the *incoming request's* scheme (http). Signing for `https://…` would fail. Caught by reasoning about it before the first deploy rather than by a failure.
+**Fix:** sign for `<internal scheme>://<public host>`.
+
+### 14. Small things
 - **Helm's `checksum/config` annotation can't include the file it lives in** (infinite recursion). The ConfigMap moved to its own template.
 - **MCP SDK v2** renamed `FastMCP` to `MCPServer`, added the 2026-07-28 stateless protocol revision, and turns on DNS-rebinding protection by default when bound to localhost. An in-cluster MCP server must set `allowed_hosts` or every request through its Service is rejected.
