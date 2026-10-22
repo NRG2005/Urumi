@@ -155,6 +155,8 @@ async def list_orders(
         params={"after": after, "before": before, "status": status, "per_page": min(per_page, 100)},
     )
     return {
+        # Which store this is: a team may run several (e.g. local and production), so say it.
+        "store": os.environ["WOO_PUBLIC_URL"],
         "store_timezone": STORE_TZ.key,
         "range": {"after": after, "before": before},
         "count": len(items),
