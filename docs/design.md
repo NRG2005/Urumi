@@ -79,6 +79,23 @@ The agent is a real MCP client of the gateway's own `/mcp`, authenticated as the
 
 **Many tools (stand-out #4).** Sending every tool's schema with every request costs about 5.8k tokens for 37 tools and grows with every server. The agent instead offers the model one `search_tools` tool plus the tools that (a) match the user's message, (b) the model found by searching, or (c) were used earlier in the conversation. Ranking is keyword scoring over names and descriptions (`toolsearch.py`): no embeddings, no extra service, explainable. If the model calls a real tool it has not loaded yet, the agent loads it and asks again. Rate-limit responses (429) are retried after the delay the provider asks for.
 
+**Streaming.** `POST /api/chat/stream` returns newline-delimited JSON events as the turn happens:
+- `step`: a new model request starts;
+- `reasoning` and `delta`: the model's thinking and answer text, forwarded token by token from the provider's own stream;
+- `search`, `tool_start`, `tool_end`: tool activity, with duration;
+- `retry`: the provider rate-limited us and we're waiting;
+- finally `done` or `error`.
+
+Tool calls are reassembled from the streamed fragments.
+
+The agent runs in its own asyncio task and pushes events into a queue that the HTTP response drains. This matters because the MCP client holds anyio task groups. If the response generator owned the client directly, a browser disconnecting mid-turn would try to close those task groups from another task. With the queue, a disconnect just cancels the agent task. The non-streaming `POST /api/chat` is the same code with the events discarded.
+
+### Storefront theme
+The store ships its own classic WordPress theme ("Urumi Supply", `charts/store/theme`) instead of a third-party one:
+- The header, footer and home page are ours; shop and product pages use WooCommerce's own templates, wrapped by `woocommerce.php`.
+- One stylesheet, driven by semantic custom properties, with contrast ratios recorded next to the tokens (all text meets WCAG AA).
+- The theme is a ConfigMap built from the chart's files. The setup Job copies it into WordPress, activates it, creates the home page and removes the sample content, so local and production get the same store with no manual steps.
+
 ### Permissions (stand-out #2)
 `tool_policies` holds a minimum role per (server, tool); no row means any member may use it. The store's write tools (`create_product`, `update_order_status`) are admin-only by default. A restricted tool is removed from that user's `tools/list` **and** refused in `resolve()` if called directly, so hiding is not the only control.
 
