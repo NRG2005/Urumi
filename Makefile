@@ -3,7 +3,7 @@ CLUSTER := urumi
 # Optional, gitignored file with the LLM key and upstream credentials.
 GATEWAY_SECRETS := $(wildcard charts/gateway/secrets.local.yaml)
 
-.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down store-backup vps-tunnel vps-kubeconfig vps-up vps-test
+.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down store-backup vps-tunnel vps-kubeconfig vps-up vps-test demo-reset
 
 up: images store everything gateway   ## Build everything and install all three releases
 	@echo; echo "Store:     http://store.localtest.me"; echo "Dashboard: http://dash.localtest.me  (admin@urumi.local / $$(make -s admin-password))"
@@ -89,3 +89,6 @@ vps-up:             ## Deploy everything to the VPS (needs vps-tunnel; uses valu
 
 vps-test:           ## Run the Definition-of-Done check against the VPS
 	KUBECONFIG=~/.kube/urumi-vps.yaml URUMI_STORE_URL=https://store.$(VPS_IP).sslip.io URUMI_DASH_URL=https://dash.$(VPS_IP).sslip.io $(MAKE) test-dod
+
+demo-reset:         ## Clear test data before a recording (asks for confirmation; KUBECONFIG picks the cluster)
+	./scripts/demo-reset.sh

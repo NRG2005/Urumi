@@ -40,6 +40,9 @@ remove_action('woocommerce_sidebar', 'woocommerce_get_sidebar', 10);
 remove_action('woocommerce_before_main_content', 'woocommerce_output_content_wrapper', 10);
 remove_action('woocommerce_after_main_content', 'woocommerce_output_content_wrapper_end', 10);
 
+// Products without a photo (e.g. one just created by the chat agent) get an on-brand placeholder.
+add_filter('woocommerce_placeholder_img_src', fn () => get_theme_file_uri('placeholder.svg'));
+
 // Wording: a bag, not a cart.
 add_filter('woocommerce_product_single_add_to_cart_text', fn () => __('Add to bag', 'urumi'));
 add_filter('woocommerce_product_add_to_cart_text', function ($text, $product) {
