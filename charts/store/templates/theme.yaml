@@ -1,0 +1,10 @@
+{{- /* The storefront theme (charts/store/theme/*) as a ConfigMap; the bootstrap Job installs and activates it. */ -}}
+{{- if eq .Values.storefront.theme "urumi" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-theme
+  labels: {{- include "store.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "theme/*").AsConfig | indent 2 }}
+{{- end }}

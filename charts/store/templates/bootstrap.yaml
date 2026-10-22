@@ -78,11 +78,23 @@ data:
     '
 
     echo "==> storefront: theme, homepage, catalogue"
-    wp theme is-installed "$STORE_THEME" || wp theme install "$STORE_THEME"
+    if [ "$STORE_THEME" = "urumi" ]; then
+      # Our own theme, shipped in the chart (charts/store/theme) and mounted from a ConfigMap.
+      mkdir -p wp-content/themes/urumi && cp -L /theme/* wp-content/themes/urumi/
+    else
+      wp theme is-installed "$STORE_THEME" || wp theme install "$STORE_THEME"
+    fi
     wp theme activate "$STORE_THEME"
+    wp option update blogname "$STORE_TITLE"
     wp option update blogdescription "$STORE_TAGLINE"
+    HOME_ID=$(wp post list --post_type=page --name=home --field=ID --posts_per_page=1)
+    [ -n "$HOME_ID" ] || HOME_ID=$(wp post create --post_type=page --post_title=Home --post_name=home --post_status=publish --porcelain)
     wp option update show_on_front page
-    wp option update page_on_front "$(wp option get woocommerce_shop_page_id)"
+    wp option update page_on_front "$HOME_ID"
+    # WordPress's sample post and page have no place in a shop.
+    for slug in hello-world sample-page; do
+      wp post list --post_type=post,page --name="$slug" --field=ID | xargs -r wp post delete --force
+    done
     wp eval-file /scripts/catalog.php
 
     echo "==> done: $STORE_URL"
@@ -171,6 +183,9 @@ spec:
           volumeMounts:
             - { name: html, mountPath: /var/www/html }
             - { name: scripts, mountPath: /scripts }
+            {{- if eq .Values.storefront.theme "urumi" }}
+            - { name: theme, mountPath: /theme }
+            {{- end }}
           resources: {{- toYaml .Values.bootstrap.resources | nindent 12 }}
       volumes:
         - name: html
@@ -179,3 +194,8 @@ spec:
         - name: scripts
           configMap:
             name: {{ .Release.Name }}-bootstrap
+        {{- if eq .Values.storefront.theme "urumi" }}
+        - name: theme
+          configMap:
+            name: {{ .Release.Name }}-theme
+        {{- end }}

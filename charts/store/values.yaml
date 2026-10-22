@@ -3,7 +3,7 @@
 store:
   domain: store.localtest.me
   scheme: http            # https in prod (TLS terminated at the ingress)
-  title: Urumi Demo Store
+  title: Urumi Supply
   timezone: Asia/Kolkata  # "today's orders" depends on this
   currency: INR
   adminUser: admin
@@ -56,8 +56,8 @@ networkPolicy:
 
 # Storefront look and demo catalogue, applied by the bootstrap Job (idempotent: existing products are kept).
 storefront:
-  theme: astra
-  tagline: Demo store for the Urumi MCP gateway
+  theme: urumi        # bundled theme in charts/store/theme; any wordpress.org theme slug also works
+  tagline: Everyday essentials, made to be worn often
   catalog:
     - { name: "Urumi T-Shirt", category: T-Shirts, price: "499", featured: true, description: "Soft cotton tee with the Urumi mark.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/tshirt-2.jpg" }
     - { name: "Hoodie with Logo", category: Hoodies, price: "1299", featured: true, description: "Warm fleece hoodie with an embroidered logo.", image: "https://woocommercecore.mystagingwebsite.com/wp-content/uploads/2017/12/hoodie-with-logo-2.jpg" }
