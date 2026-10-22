@@ -8,7 +8,9 @@ only a signature computed from it does.
 Why two base URLs: WooCommerce verifies the signature against its *own* home
 URL (e.g. http://store.localtest.me), not the hostname we connect to. So we
 sign for `public_url` but send the request to `internal_url` (the ClusterIP
-Service), which never leaves the cluster.
+Service), which never leaves the cluster. The scheme WooCommerce uses is that
+of the incoming request, so on an https store reached over in-cluster http we
+sign for http://<public host>.
 """
 
 import base64
@@ -17,7 +19,7 @@ import hmac
 import secrets
 import time
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx
 
@@ -40,7 +42,8 @@ def _php_str(value: Any) -> str:
 class WooClient:
     def __init__(self, internal_url: str, public_url: str, key: str, secret: str, timeout: float = 15.0):
         self.internal_url = internal_url.rstrip("/")
-        self.public_url = public_url.rstrip("/")
+        # Public host, but the scheme we actually connect with (see module docstring).
+        self.sign_base = f"{urlsplit(internal_url).scheme}://{urlsplit(public_url).netloc}"
         self.key = key
         self.secret = secret
         self.http = httpx.AsyncClient(timeout=timeout)
@@ -55,7 +58,7 @@ class WooClient:
         all_params = {k: _php_str(v) for k, v in {**params, **oauth}.items()}
         normalized = sorted((_enc(k), _enc(v)) for k, v in all_params.items())
         query = "%26".join(f"{k}%3D{v}" for k, v in normalized)
-        base_uri = quote(f"{self.public_url}/wp-json/wc/v3{path}", safe="")
+        base_uri = quote(f"{self.sign_base}/wp-json/wc/v3{path}", safe="")
         string_to_sign = f"{method}&{base_uri}&{query}"
         digest = hmac.new(f"{self.secret}&".encode(), string_to_sign.encode(), hashlib.sha256).digest()
         return {**all_params, "oauth_signature": base64.b64encode(digest).decode()}

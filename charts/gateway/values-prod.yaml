@@ -1,4 +1,4 @@
-domain: dash.example.com
+domain: dash.4.194.18.91.sslip.io
 scheme: https
 ingress:
   tls:

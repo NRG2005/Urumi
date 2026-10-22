@@ -1,6 +1,6 @@
 # k3s VPS. Replace the domain with a real DNS name pointing at the VPS.
 store:
-  domain: store.example.com
+  domain: store.4.194.18.91.sslip.io
   scheme: https
 ingress:
   tls:

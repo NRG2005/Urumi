@@ -8,7 +8,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: you@example.com            # change me: expiry notices go here
+    # No email: Let's Encrypt no longer sends expiry notices, and cert-manager renews automatically.
     privateKeySecretRef:
       name: letsencrypt-account-key
     solvers:
