@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ago, api, type ApiKey, type Config, type User } from '../api'
 import type { Nav } from '../App'
-import { Code, CopyInline, Empty, Icon, Modal, useToast } from '../ui'
+import { Code, CopyInline, Empty, Icon, Modal, useConfirm, useToast } from '../ui'
 
 type Client = 'claude' | 'cursor' | 'inspector'
 
@@ -24,6 +24,7 @@ export default function Keys({ user, nav }: { user: User; nav: Nav }) {
   const [creating, setCreating] = useState(false)
   const [showRevoked, setShowRevoked] = useState(false)
   const toast = useToast()
+  const confirm = useConfirm()
 
   const load = useCallback(async () => setKeys(await api<ApiKey[]>('/keys')), [])
   useEffect(() => { load(); api<Config>('/config').then(setCfg) }, [load])
@@ -32,7 +33,10 @@ export default function Keys({ user, nav }: { user: User; nav: Nav }) {
   }, [nav])
 
   const revoke = async (k: ApiKey) => {
-    if (!confirm(`Revoke “${k.name}”? Any client using it is rejected on its next request.`)) return
+    if (!(await confirm({
+      title: `Revoke “${k.name}”?`, danger: true, confirmLabel: 'Revoke key',
+      body: <>Any MCP client using this key is rejected on its <b>very next request</b>. This can't be undone; you can always generate a new key.</>,
+    }))) return
     await api(`/keys/${k.id}`, { method: 'DELETE' })
     toast(`Key “${k.name}” revoked`)
     load()

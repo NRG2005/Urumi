@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ago, api, ApiError, type ApiKey, type Role, type User } from '../api'
 import type { Nav } from '../App'
-import { Avatar, Code, Icon, Menu, Modal, Segmented, useToast } from '../ui'
+import { Avatar, Code, Icon, Menu, Modal, Segmented, useConfirm, useToast } from '../ui'
 
 interface Member extends User { created_at: string; active_keys: number }
 interface Invite { email: string; role: Role; expires_at: string }
@@ -12,6 +12,7 @@ export default function Members({ user, nav }: { user: User; nav: Nav }) {
   const [inviting, setInviting] = useState(false)
   const [keysFor, setKeysFor] = useState<Member | null>(null)
   const toast = useToast()
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     const r = await api<{ users: Member[]; pending_invites: Invite[] }>('/users')
@@ -66,7 +67,7 @@ export default function Members({ user, nav }: { user: User; nav: Nav }) {
                     <button onClick={() => setKeysFor(m)}><Icon name="key" />Manage API keys</button>
                     {m.id !== user.id && <>
                       <hr />
-                      <button className="danger" onClick={() => confirm(`Remove ${m.email}? Their keys stop working immediately.`) && act(() => api(`/users/${m.id}`, { method: 'DELETE' }), `${m.email} removed`)}>
+                      <button className="danger" onClick={async () => (await confirm({ title: `Remove ${m.name || m.email}?`, danger: true, confirmLabel: 'Remove from team', body: <>{m.email} loses access immediately and all {m.active_keys} of their API keys stop working. Their past calls stay in the audit log.</> })) && act(() => api(`/users/${m.id}`, { method: 'DELETE' }), `${m.email} removed`)}>
                         <Icon name="trash" />Remove from team
                       </button>
                     </>}

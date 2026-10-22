@@ -15,6 +15,8 @@ import asyncio
 import json
 import os
 import re
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -110,46 +112,90 @@ def _used_tools(history: list[dict]) -> set[str]:
     }
 
 
-async def _complete(http: httpx2.AsyncClient, messages: list[dict], tools: list[dict]) -> dict:
-    payload = {"model": config.LLM_MODEL, "messages": messages, "tools": tools, "tool_choice": "auto", "temperature": 0.2}
+Emit = Callable[[dict], Awaitable[None]]
+
+
+async def _ignore(_: dict) -> None:
+    return None
+
+
+async def _complete(http: httpx2.AsyncClient, messages: list[dict], tools: list[dict], emit: Emit) -> dict:
+    """One streamed chat completion. Text and reasoning are forwarded to `emit` as they arrive;
+    tool calls are reassembled from their streamed fragments. Returns the full assistant message."""
+    payload = {"model": config.LLM_MODEL, "messages": messages, "tools": tools, "tool_choice": "auto",
+               "temperature": 0.2, "stream": True}
     for attempt in range(3):
-        resp = await http.post(
-            f"{config.LLM_BASE_URL}/chat/completions", json=payload,
+        async with http.stream(
+            "POST", f"{config.LLM_BASE_URL}/chat/completions", json=payload,
             headers={"Authorization": f"Bearer {config.LLM_API_KEY}"},
-        )
-        if resp.status_code == 429 and attempt < 2:
-            # Free tiers rate-limit per minute; wait as long as the provider asks (capped).
-            wait = float(resp.headers.get("retry-after") or 10)
-            await asyncio.sleep(min(wait, 25))
-            continue
-        if resp.status_code == 400 and (m := _UNLOADED.search(resp.text)):
-            raise UnloadedToolCall(m.group(1))
-        if resp.status_code >= 400:
-            raise LLMError(f"LLM provider returned {resp.status_code}: {resp.text[:300]}")
-        return resp.json()["choices"][0]["message"]
+        ) as resp:
+            if resp.status_code >= 400:
+                body = (await resp.aread()).decode(errors="replace")
+                if resp.status_code == 429 and attempt < 2:
+                    # Free tiers rate-limit per minute; wait as long as the provider asks (capped).
+                    wait = min(float(resp.headers.get("retry-after") or 10), 25)
+                    await emit({"t": "retry", "seconds": round(wait)})
+                    await asyncio.sleep(wait)
+                    continue
+                if resp.status_code == 400 and (m := _UNLOADED.search(body)):
+                    raise UnloadedToolCall(m.group(1))
+                raise LLMError(f"LLM provider returned {resp.status_code}: {body[:300]}")
+
+            content: list[str] = []
+            calls: dict[int, dict] = {}
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    choices = json.loads(data).get("choices") or []
+                except json.JSONDecodeError:
+                    continue
+                delta = choices[0].get("delta", {}) if choices else {}
+                if delta.get("reasoning"):
+                    await emit({"t": "reasoning", "text": delta["reasoning"]})
+                if delta.get("content"):
+                    content.append(delta["content"])
+                    await emit({"t": "delta", "text": delta["content"]})
+                for frag in delta.get("tool_calls") or []:
+                    call = calls.setdefault(frag.get("index", 0), {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                    call["id"] = frag.get("id") or call["id"]
+                    fn = frag.get("function") or {}
+                    call["function"]["name"] += fn.get("name") or ""
+                    call["function"]["arguments"] += fn.get("arguments") or ""
+            message: dict = {"content": "".join(content)}
+            if calls:
+                message["tool_calls"] = [calls[i] for i in sorted(calls)]
+            return message
     raise LLMError("LLM provider kept rate-limiting; try again in a minute")
 
 
-async def run(user: dict, history: list[dict]) -> dict:
+def _unwrap(group: BaseExceptionGroup) -> LLMError:
+    """anyio task groups wrap errors; surface the real one."""
+    exc: BaseException = group
+    while isinstance(exc, BaseExceptionGroup):
+        exc = exc.exceptions[0]
+    return exc if isinstance(exc, LLMError) else LLMError(f"agent failed: {exc}")
+
+
+async def run(user: dict, history: list[dict], emit: Emit = _ignore) -> dict:
+    """Run one chat turn. `emit` receives progress events (used by the streaming endpoint)."""
     try:
-        return await _run(user, history)
-    except BaseExceptionGroup as group:  # anyio task groups wrap errors; surface the real one
-        exc: BaseException = group
-        while isinstance(exc, BaseExceptionGroup):
-            exc = exc.exceptions[0]
-        if isinstance(exc, LLMError):
-            raise exc from None
-        raise LLMError(f"agent failed: {exc}") from None
+        return await _run(user, history, emit)
+    except BaseExceptionGroup as group:
+        raise _unwrap(group) from None
 
 
-async def _run(user: dict, history: list[dict]) -> dict:
+async def _run(user: dict, history: list[dict], emit: Emit) -> dict:
     """history: OpenAI-format messages from the browser. Returns the new messages."""
     token = auth.agent_token(user)
     mcp_http = create_mcp_http_client(headers={"Authorization": f"Bearer {token}"}, timeout=httpx2.Timeout(60))
     new_messages: list[dict] = []
     trace: list[dict] = []
 
-    async with mcp_http, httpx2.AsyncClient(timeout=60) as llm_http:
+    async with mcp_http, httpx2.AsyncClient(timeout=httpx2.Timeout(60, read=90)) as llm_http:
         async with Client(streamable_http_client(config.INTERNAL_MCP_URL, http_client=mcp_http)) as gateway:
             # The full list, as this user is allowed to see it. The model only sees what it searches for.
             listed = (await gateway.list_tools()).tools
@@ -162,14 +208,15 @@ async def _run(user: dict, history: list[dict]) -> dict:
             messages = [{"role": "system", "content": _system_prompt(toolsearch.catalog(index))}, *_compact(history)]
 
             for _ in range(MAX_STEPS):
+                await emit({"t": "step"})
                 tools = [SEARCH_TOOL, *(_schema(by_safe[n]) for n in sorted(loaded))]
                 try:
-                    reply = await _complete(llm_http, messages + new_messages, tools)
+                    reply = await _complete(llm_http, messages + new_messages, tools, emit)
                 except UnloadedToolCall as exc:
                     if exc.tool not in by_safe or exc.tool in loaded:
                         raise LLMError(f"model called unknown tool {exc.tool}") from None
                     loaded.add(exc.tool)  # it guessed a real tool's name: load it and ask again
-                    reply = await _complete(llm_http, messages + new_messages, [SEARCH_TOOL, *(_schema(by_safe[n]) for n in sorted(loaded))])
+                    reply = await _complete(llm_http, messages + new_messages, [SEARCH_TOOL, *(_schema(by_safe[n]) for n in sorted(loaded))], emit)
                 calls = reply.get("tool_calls") or []
                 assistant = {"role": "assistant", "content": reply.get("content") or ""}
                 if calls:
@@ -192,18 +239,51 @@ async def _run(user: dict, history: list[dict]) -> dict:
                             [{"name": t["name"], "description": t["description"][:200]} for t in found]
                             or {"result": "no matching tools; try other keywords"}
                         )
-                        trace.append({"tool": SEARCH, "server": "gateway", "arguments": args, "is_error": False,
-                                      "result_preview": ", ".join(t["name"] for t in found) or "no matches"})
+                        step = {"tool": SEARCH, "server": "gateway", "arguments": args, "is_error": False,
+                                "result_preview": ", ".join(t["name"] for t in found) or "no matches"}
+                        trace.append(step)
+                        await emit({"t": "search", "id": call["id"], **step})
                     elif fn not in by_safe:
                         text = f"unknown tool {fn}; use {SEARCH} first"
                     else:
                         real = by_safe[fn].name
+                        await emit({"t": "tool_start", "id": call["id"], "tool": real, "server": real.split("__")[0], "arguments": args})
+                        started = time.monotonic()
                         result = await gateway.call_tool(real, args)
                         text = _result_text(result)
-                        trace.append({"tool": real, "server": real.split("__")[0], "arguments": args,
-                                      "is_error": bool(result.is_error), "result_preview": text[:600]})
+                        step = {"tool": real, "server": real.split("__")[0], "arguments": args,
+                                "is_error": bool(result.is_error), "result_preview": text[:600]}
+                        trace.append(step)
+                        await emit({"t": "tool_end", "id": call["id"], **step, "ms": int((time.monotonic() - started) * 1000)})
                     new_messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
 
     final = "I stopped after too many tool calls. Try a more specific question."
     new_messages.append({"role": "assistant", "content": final})
     return {"messages": new_messages, "trace": trace, "reply": final}
+
+
+async def stream(user: dict, history: list[dict]) -> AsyncIterator[bytes]:
+    """NDJSON event stream for the dashboard. The agent runs in its own task (it owns the MCP
+    client's task groups); this generator only relays its events, so a disconnecting browser
+    cancels the agent cleanly instead of tearing a task group across tasks."""
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+    async def worker() -> None:
+        try:
+            result = await asyncio.wait_for(run(user, history, queue.put), timeout=150)
+            await queue.put({"t": "done", **result})
+        except asyncio.TimeoutError:
+            await queue.put({"t": "error", "message": "the agent took too long"})
+        except LLMError as exc:
+            await queue.put({"t": "error", "message": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - always end the stream with an explanation
+            await queue.put({"t": "error", "message": f"agent failed: {exc}"})
+        finally:
+            await queue.put(None)
+
+    task = asyncio.create_task(worker())
+    try:
+        while (event := await queue.get()) is not None:
+            yield (json.dumps(event, ensure_ascii=False) + "\n").encode()
+    finally:
+        task.cancel()

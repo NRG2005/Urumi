@@ -7,7 +7,7 @@ import Keys from './pages/Keys'
 import Members from './pages/Members'
 import Overview from './pages/Overview'
 import Servers from './pages/Servers'
-import { Avatar, Icon, type IconName, Logo, Menu, ToastProvider, useTheme } from './ui'
+import { Avatar, ConfirmProvider, Icon, type IconName, Logo, Menu, ToastProvider, useTheme } from './ui'
 
 export type Page = 'overview' | 'chat' | 'servers' | 'keys' | 'members' | 'audit'
 /** One-shot requests from the command palette to a page, e.g. "open the new-key dialog". */
@@ -24,7 +24,7 @@ const NAV: { id: Page; label: string; icon: IconName; admin?: boolean; group: 'W
 ]
 
 export default function App() {
-  return <ToastProvider><Root /></ToastProvider>
+  return <ToastProvider><ConfirmProvider><Root /></ConfirmProvider></ToastProvider>
 }
 
 function Root() {

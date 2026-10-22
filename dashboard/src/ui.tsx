@@ -95,6 +95,36 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// ---------------- confirm (in-app, replaces window.confirm) ----------------
+
+export interface ConfirmOptions { title: string; body: ReactNode; confirmLabel: string; danger?: boolean }
+const ConfirmCtx = createContext<(o: ConfirmOptions) => Promise<boolean>>(async () => false)
+/** `if (await confirm({...})) doIt()`: an in-app dialog instead of the browser's native popup. */
+export const useConfirm = () => useContext(ConfirmCtx)
+
+export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState<{ opts: ConfirmOptions; resolve: (ok: boolean) => void } | null>(null)
+  const ask = useCallback((opts: ConfirmOptions) => new Promise<boolean>((resolve) => setPending({ opts, resolve })), [])
+  const close = (ok: boolean) => { pending?.resolve(ok); setPending(null) }
+  return (
+    <ConfirmCtx.Provider value={ask}>
+      {children}
+      {pending && (
+        <Modal title={pending.opts.title} onClose={() => close(false)}
+          footer={<>
+            <button className="btn" onClick={() => close(false)}>Cancel</button>
+            <button className={`btn ${pending.opts.danger ? 'danger-solid' : 'primary'}`} autoFocus onClick={() => close(true)}>{pending.opts.confirmLabel}</button>
+          </>}>
+          <div className="row" style={{ alignItems: 'flex-start', gap: 12 }}>
+            {pending.opts.danger && <span className="confirm-icon"><Icon name="alert" /></span>}
+            <div className="muted" style={{ lineHeight: 1.55 }}>{pending.opts.body}</div>
+          </div>
+        </Modal>
+      )}
+    </ConfirmCtx.Provider>
+  )
+}
+
 // ---------------- copy ----------------
 
 export function CopyButton({ text, label, className = 'btn ghost icon' }: { text: string; label?: string; className?: string }) {

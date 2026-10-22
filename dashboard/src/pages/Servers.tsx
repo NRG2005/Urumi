@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ago, api, ApiError, type Role, type Server, type Stat, type User } from '../api'
 import type { Nav } from '../App'
-import { colorFor, Empty, Icon, Menu, Modal, Segmented, Status, Switch, useToast } from '../ui'
+import { colorFor, Empty, Icon, Menu, Modal, Segmented, Status, Switch, useConfirm, useToast } from '../ui'
 
 export default function Servers({ user, nav }: { user: User; nav: Nav }) {
   const isAdmin = user.role === 'admin'
@@ -9,6 +9,7 @@ export default function Servers({ user, nav }: { user: User; nav: Nav }) {
   const [stats, setStats] = useState<Record<string, Stat>>({})
   const [editing, setEditing] = useState<Server | 'new' | null>(null)
   const toast = useToast()
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     setServers(await api<Server[]>('/servers'))
@@ -72,7 +73,7 @@ export default function Servers({ user, nav }: { user: User; nav: Nav }) {
                     <button onClick={() => act(() => api(`/servers/${s.id}/check`, { method: 'POST' }), 'Health check complete')}><Icon name="refresh" />Check now</button>
                     <button onClick={() => setEditing(s)}><Icon name="edit" />Edit server</button>
                     <hr />
-                    <button className="danger" onClick={() => confirm(`Remove ${s.name}? Its tools disappear for everyone.`) && act(() => api(`/servers/${s.id}`, { method: 'DELETE' }), `${s.name} removed`)}>
+                    <button className="danger" onClick={async () => (await confirm({ title: `Remove ${s.name}?`, danger: true, confirmLabel: 'Remove server', body: <>Its {s.tools.length} tools disappear for everyone immediately, and its stored credential is deleted. You can add it again later.</> })) && act(() => api(`/servers/${s.id}`, { method: 'DELETE' }), `${s.name} removed`)}>
                       <Icon name="trash" />Remove
                     </button>
                   </Menu>

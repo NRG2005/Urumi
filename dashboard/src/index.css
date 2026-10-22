@@ -400,3 +400,27 @@ tr.clickable { cursor: pointer; }
   .server-line { grid-template-columns: minmax(0, 1fr) 90px; }
   .server-line > :nth-child(2), .server-line > :nth-child(4) { display: none; }
 }
+
+/* destructive confirm */
+.btn.danger-solid { background: var(--bad-strong); border-color: var(--bad-strong); color: #fff; }
+.btn.danger-solid:hover { background: color-mix(in srgb, var(--bad-strong) 88%, #000); }
+.confirm-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--bad-soft); color: var(--bad-strong); }
+
+/* streaming chat */
+.spinner { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--text); animation: spin .7s linear infinite; flex-shrink: 0; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.shimmer-text { background: linear-gradient(90deg, var(--muted) 30%, var(--text) 50%, var(--muted) 70%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer-x 1.6s linear infinite; }
+@keyframes shimmer-x { to { background-position: -200% 0; } }
+.working { margin: 2px 0 10px; }
+.reasoning { margin-top: 6px; font-size: 12.5px; color: var(--faint); font-style: italic; border-left: 2px solid var(--border); padding-left: 10px; max-width: 640px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.steps.live { padding: 2px 0; }
+.steps.live .step { animation: slide .18s ease-out; }
+.step-icon { display: grid; place-items: center; height: 19px; }
+.step.running pre { opacity: .7; }
+.streaming > :last-child::after { content: ""; display: inline-block; width: 7px; height: 15px; margin-left: 2px; vertical-align: text-bottom; background: var(--text); animation: caret 1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.msg-assistant .bot.live { box-shadow: 0 0 0 3px var(--accent-soft); }
+.stop-square { width: 10px; height: 10px; border-radius: 2px; background: var(--inverse); }
+@media (prefers-reduced-motion: reduce) {
+  .spinner, .shimmer-text, .streaming > :last-child::after { animation: none; }
+}

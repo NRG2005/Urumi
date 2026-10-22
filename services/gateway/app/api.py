@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import agent, auth, config, db, registry
@@ -373,6 +374,18 @@ async def timeseries(user: dict = Depends(current_user)):
 
 class ChatIn(BaseModel):
     messages: list[dict]
+
+
+@router.post("/chat/stream")
+async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
+    """Same agent as /chat, but streams progress as newline-delimited JSON events:
+    step, reasoning, delta (answer text), search, tool_start, tool_end, retry, then done or error."""
+    if not config.LLM_API_KEY:
+        raise HTTPException(503, "no LLM API key configured (set llm.apiKey in the gateway Helm values)")
+    return StreamingResponse(
+        agent.stream(user, body.messages), media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/chat")
