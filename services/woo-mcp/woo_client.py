@@ -56,12 +56,15 @@ class WooClient:
             "oauth_signature_method": "HMAC-SHA256",
         }
         all_params = {k: _php_str(v) for k, v in {**params, **oauth}.items()}
-        normalized = sorted((_enc(k), _enc(v)) for k, v in all_params.items())
+        digest = hmac.new(f"{self.secret}&".encode(), self.string_to_sign(method, path, all_params).encode(), hashlib.sha256).digest()
+        return {**all_params, "oauth_signature": base64.b64encode(digest).decode()}
+
+    def string_to_sign(self, method: str, path: str, params: dict[str, str]) -> str:
+        """OAuth 1.0a signature base string, exactly as WooCommerce rebuilds it server-side."""
+        normalized = sorted((_enc(k), _enc(v)) for k, v in params.items())
         query = "%26".join(f"{k}%3D{v}" for k, v in normalized)
         base_uri = quote(f"{self.sign_base}/wp-json/wc/v3{path}", safe="")
-        string_to_sign = f"{method}&{base_uri}&{query}"
-        digest = hmac.new(f"{self.secret}&".encode(), string_to_sign.encode(), hashlib.sha256).digest()
-        return {**all_params, "oauth_signature": base64.b64encode(digest).decode()}
+        return f"{method}&{base_uri}&{query}"
 
     async def request(self, method: str, path: str, params: dict[str, Any] | None = None, json: Any = None) -> Any:
         params = {k: v for k, v in (params or {}).items() if v is not None}

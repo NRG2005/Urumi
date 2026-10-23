@@ -1,5 +1,7 @@
 # Urumi: WooCommerce hosting with a team MCP gateway, on Kubernetes
 
+[![ci](https://github.com/NRG2005/Urumi/actions/workflows/ci.yml/badge.svg)](https://github.com/NRG2005/Urumi/actions/workflows/ci.yml) [![images](https://github.com/NRG2005/Urumi/actions/workflows/images.yml/badge.svg)](https://github.com/NRG2005/Urumi/actions/workflows/images.yml)
+
 A WooCommerce store, an MCP server for it, and a **team MCP gateway** with a React dashboard and a streaming chat agent, all running on Kubernetes and installed with Helm.
 
 An admin connects MCP servers once in the dashboard. Every team member then gets **all** of those tools through **one MCP endpoint and one personal API key**, from Claude Code, Cursor, MCP Inspector, or the chat agent built into the dashboard. Members never see the upstream servers' credentials, and every tool call is audited.
@@ -25,6 +27,7 @@ An admin connects MCP servers once in the dashboard. Every team member then gets
 - [Run it locally](#run-it-locally)
 - [Using it](#using-it)
 - [Production on a VPS (k3s)](#production-on-a-vps-k3s)
+- [Tests](#tests)
 - [Upgrades and rollback](#upgrades-and-rollback)
 - [Security demo: a malicious MCP server](#security-demo-a-malicious-mcp-server)
 - [Make targets](#make-targets)
@@ -255,6 +258,16 @@ The GHCR images are public because the repository is. For a private repository, 
 
 ---
 
+## Tests
+
+| Layer | Command | What it covers |
+|---|---|---|
+| Unit (41 tests, no cluster) | `make test` | gateway naming and routing, every refusal path (unknown, disabled, quarantined, unreachable, wrong role), role filtering, rug-pull fingerprinting, upstream schema normalisation, tool search, password/key hashing, credential encryption, signed tokens, the SSRF guard, the streamed-LLM parser; woo-mcp's OAuth signing quirks, store-timezone dates and untrusted-field labelling |
+| End to end (24 checks, live cluster) | `make test-dod` or `make vps-test` | the brief's whole Definition of Done with two fresh users (see [Run it locally](#run-it-locally)) |
+| CI on every push | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | unit tests, `helm lint` + render of every chart with local and prod values, dashboard type-check and build, theme PHP syntax |
+
+---
+
 ## Upgrades and rollback
 
 Every `make store|gateway|everything` is a `helm upgrade --install`, so each deploy is a numbered release. To see the history and roll back:
@@ -306,6 +319,7 @@ Remove it with `make evil-down`. Details in the [threat model](docs/threat-model
 | `make up` | build all images and install all releases |
 | `make store`, `make everything`, `make gateway` | install or upgrade one release (`ENV=prod` for production values) |
 | `make images`, `make image-<name>` | build image(s) and import them into k3d |
+| `make test` | unit tests (41, no cluster needed) |
 | `make test-dod` | automated Definition-of-Done check (24 checks) |
 | `make demo-reset` | clear test data: users other than the admin, API keys, audit log, orders, products without a photo. Keeps servers, permissions and the catalogue. Asks for confirmation. |
 | `make admin-password`, `make store-password` | print generated passwords |
@@ -330,6 +344,7 @@ services/gateway      app/mcp_gateway.py   the /mcp endpoint and auth middleware
                       app/toolsearch.py    tool search for many-tool setups
                       app/auth.py, security.py, api.py, db.py, audit.py
 dashboard             React dashboard (src/ui.tsx = design-system components, src/pages/*)
+services/*/tests      unit tests (pytest)
 scripts               test_dod.py (automated DoD check), demo-reset.sh
 deploy                cert-manager issuer, Traefik https redirect (production only)
 docs                  design, threat model, lessons, upgrades, screenshots

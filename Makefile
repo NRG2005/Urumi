@@ -3,7 +3,7 @@ CLUSTER := urumi
 # Optional, gitignored file with the LLM key and upstream credentials.
 GATEWAY_SECRETS := $(wildcard charts/gateway/secrets.local.yaml)
 
-.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down store-backup vps-tunnel vps-kubeconfig vps-up vps-test demo-reset
+.PHONY: up cluster cluster-down images image-% store everything gateway store-password admin-password status down test-dod evil rugpull evil-down store-backup vps-tunnel vps-kubeconfig vps-up vps-test demo-reset test
 
 up: images store everything gateway   ## Build everything and install all three releases
 	@echo; echo "Store:     http://store.localtest.me"; echo "Dashboard: http://dash.localtest.me  (admin@urumi.local / $$(make -s admin-password))"
@@ -92,3 +92,8 @@ vps-test:           ## Run the Definition-of-Done check against the VPS
 
 demo-reset:         ## Clear test data before a recording (asks for confirmation; KUBECONFIG picks the cluster)
 	./scripts/demo-reset.sh
+
+test:               ## Unit tests for the gateway and woo-mcp (no cluster needed)
+	@test -d .venv-unit || (python3 -m venv .venv-unit && .venv-unit/bin/pip install -q -r services/gateway/requirements.txt -r services/woo-mcp/requirements.txt pytest)
+	cd services/gateway && ../../.venv-unit/bin/python -m pytest -q tests
+	cd services/woo-mcp && ../../.venv-unit/bin/python -m pytest -q tests

@@ -1,0 +1,72 @@
+# Fast checks on every push and pull request. No cluster needed.
+# The full end-to-end Definition-of-Done check (scripts/test_dod.py) runs against a live cluster: make test-dod.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: unit tests (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [gateway, woo-mcp]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # same as the container images
+          cache: pip
+          cache-dependency-path: services/${{ matrix.service }}/requirements.txt
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q tests
+
+  helm:
+    name: helm lint + render (local and prod values)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: lint and render every chart with each environment's values
+        run: |
+          set -e
+          for chart in store gateway everything; do
+            for env in local prod; do
+              echo "::group::$chart ($env)"
+              helm lint charts/$chart -f charts/$chart/values-$env.yaml
+              helm template $chart charts/$chart -f charts/$chart/values-$env.yaml > /dev/null
+              echo "::endgroup::"
+            done
+          done
+          helm lint charts/evil-mcp
+
+  dashboard:
+    name: dashboard type-check + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run build   # tsc -b && vite build
+
+  storefront-theme:
+    name: storefront theme PHP syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: for f in charts/store/theme/*.php; do php -l "$f"; done
